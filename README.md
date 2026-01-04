@@ -168,6 +168,42 @@ pio run -e node_security
 pio run -e node_gateway -t upload
 ```
 
+```bash
+cd agrisecure/firmware
+
+# Crea ambiente virtuale
+python3 -m venv venv
+
+# Attiva ambiente virtuale
+source venv/bin/activate
+
+# Installa PlatformIO
+pip install platformio
+
+# Compila per Gateway
+pio run -e node_gateway
+
+# Compila per Nodo Ambientale
+pio run -e node_ambient
+
+# Compila per Nodo Sicurezza
+pio run -e node_security
+
+# Upload su ESP32 (collega il dispositivo via USB)
+pio run -e node_gateway -t upload
+pio run -e node_ambient -t upload
+pio run -e node_security -t upload
+
+# Disattiva ambiente virtuale quando hai finito
+deactivate
+
+```
+
+
+
+
+
+
 ---
 
 ## 🔧 Gestione Servizi
