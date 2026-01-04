@@ -42,8 +42,8 @@ AgriSecure è un sistema IoT end-to-end per:
          ┌────────────────┼────────────────┐
          │                │                │
     ┌────┴────┐     ┌────┴────┐     ┌─────┴────┐
-    │ 🌡️ AMB  │     │ 🌡️ AMB  │     │ 🚨 SEC  │
-    │  Node   │     │  Node   │     │  Node   │
+    │ 🌡️ AMB  │     │ 🌡️ AMB  │     │ 🚨 SEC   │
+    │  Node   │     │  Node   │     │  Node    │
     └─────────┘     └─────────┘     └──────────┘
 ```
 
