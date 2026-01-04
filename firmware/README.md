@@ -151,7 +151,7 @@ Abilitare debug in `platformio.ini`:
 
 ## 📄 Licenza
 
-Proprietario - Turiliffiu © 2024
+Proprietario - Turiliffiu © 2025
 
 ## 👥 Contatti
 
