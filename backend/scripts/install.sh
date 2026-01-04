@@ -98,7 +98,9 @@ fi
 # ============================================================================
 print_step 1 "Aggiornamento sistema..."
 
-apt update && apt upgrade -y > /dev/null 2>&1
+apt update
+apt upgrade -y
+
 print_success "Sistema aggiornato"
 
 # ============================================================================
