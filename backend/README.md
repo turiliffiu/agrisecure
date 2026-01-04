@@ -30,160 +30,93 @@ Backend Django per il sistema di monitoraggio agricolo e sicurezza perimetrale A
 
 ## 📦 Requisiti di Sistema
 
-- Ubuntu 22.04/24.04 LTS (o Debian 12)
-- Python 3.11+
+- Ubuntu 24.04 LTS (container LXC su Proxmox)
+- Python 3.10+
 - PostgreSQL 14+
 - Redis 6+
 - Mosquitto 2+
-- Nginx
 
-## 🚀 Installazione Rapida (da GitHub)
-
-### 1. Clona il repository
-
-```bash
-cd /opt
-sudo git clone https://github.com/turiliffiu/agrisecure-backend.git agrisecure
-cd agrisecure
-```
-
-### 2. Esegui setup automatico
-
-```bash
-sudo bash scripts/setup.sh
-```
-
-Questo script:
-- Installa tutte le dipendenze di sistema
-- Crea utente `agrisecure`
-- Configura PostgreSQL, Redis, Mosquitto
-- Crea ambiente virtuale Python
-- Genera file `.env`
-
-### 3. Configura l'ambiente
-
-```bash
-sudo nano /opt/agrisecure/.env
-```
-
-Modifica almeno:
-- `SECRET_KEY` (già generata automaticamente)
-- `DB_PASSWORD` (se diversa da default)
-- `MQTT_PASSWORD`
-- Credenziali notifiche (Telegram, Email, ecc.)
-
-### 4. Inizializza il database
-
-```bash
-cd /opt/agrisecure
-sudo -u agrisecure venv/bin/python manage.py migrate
-sudo -u agrisecure venv/bin/python manage.py createsuperuser
-sudo -u agrisecure venv/bin/python manage.py collectstatic --noinput
-```
-
-### 5. Installa e avvia i servizi
-
-```bash
-sudo bash scripts/install_services.sh
-sudo bash scripts/start_all.sh
-```
-
-### 6. Verifica installazione
-
-```bash
-# Stato servizi
-sudo systemctl status agrisecure-*
-
-# Test connessione
-curl http://localhost/api/v1/nodes/
-```
-
-Accedi a:
-- **Admin Django**: http://localhost/admin/
-- **API Docs (Swagger)**: http://localhost/api/v1/docs/
-- **API Docs (ReDoc)**: http://localhost/api/v1/redoc/
-
----
-
-## 📖 Installazione Manuale Dettagliata
+## 🚀 Installazione Rapida
 
 ### Prerequisiti
 
-```bash
-# Aggiorna sistema
-sudo apt update && sudo apt upgrade -y
+Container LXC Ubuntu 24.04 su Proxmox:
+- **CPU**: 2 cores
+- **RAM**: 1 GB
+- **Disco**: 15 GB
+- **Rete**: DHCP
 
-# Installa dipendenze
-sudo apt install -y python3 python3-pip python3-venv python3-dev \
-    postgresql postgresql-contrib libpq-dev \
-    redis-server mosquitto mosquitto-clients \
-    nginx git build-essential
-```
-
-### PostgreSQL
+### Installazione Automatica
 
 ```bash
-# Crea database e utente
-sudo -u postgres psql << EOF
-CREATE USER agrisecure WITH PASSWORD 'tua_password_sicura';
-CREATE DATABASE agrisecure OWNER agrisecure;
-GRANT ALL PRIVILEGES ON DATABASE agrisecure TO agrisecure;
-EOF
-```
-
-### Redis
-
-```bash
-sudo systemctl enable redis-server
-sudo systemctl start redis-server
-```
-
-### Mosquitto MQTT
-
-```bash
-# Crea password utente MQTT
-sudo mosquitto_passwd -c /etc/mosquitto/passwd agrisecure
-
-# Configurazione
-sudo tee /etc/mosquitto/conf.d/agrisecure.conf << EOF
-listener 1883
-allow_anonymous false
-password_file /etc/mosquitto/passwd
-persistence true
-EOF
-
-sudo systemctl enable mosquitto
-sudo systemctl restart mosquitto
-```
-
-### Applicazione Django
-
-```bash
-# Crea utente sistema
-sudo useradd -r -s /bin/bash -m agrisecure
+# Dentro il container
+apt update && apt install -y git
 
 # Clona repository
 cd /opt
-sudo git clone https://github.com/turiliffiu/agrisecure-backend.git agrisecure
-sudo chown -R agrisecure:agrisecure /opt/agrisecure
+git clone https://github.com/turiliffiu/agrisecure.git
+cd agrisecure/backend
 
-# Ambiente virtuale
-cd /opt/agrisecure
-sudo -u agrisecure python3 -m venv venv
-sudo -u agrisecure venv/bin/pip install --upgrade pip
-sudo -u agrisecure venv/bin/pip install -r requirements.txt
+# Esegui installazione automatica
+sudo bash scripts/install.sh
+```
 
-# Configurazione
-sudo -u agrisecure cp .env.example .env
-sudo -u agrisecure nano .env  # Modifica le credenziali
+Lo script installa e configura automaticamente:
+- ✅ PostgreSQL (database `agrisecure`)
+- ✅ Redis (cache e broker Celery)
+- ✅ Mosquitto MQTT (broker IoT)
+- ✅ Python 3 + ambiente virtuale
+- ✅ Django + dipendenze
+- ✅ Servizi systemd
+- ✅ Nginx reverse proxy
+- ✅ File `.env` con SECRET_KEY casuale
 
-# Migrazioni
-sudo -u agrisecure venv/bin/python manage.py migrate
-sudo -u agrisecure venv/bin/python manage.py createsuperuser
-sudo -u agrisecure venv/bin/python manage.py collectstatic --noinput
+### Post-Installazione
 
-# Crea directory
-sudo -u agrisecure mkdir -p logs media
+```bash
+# Crea superuser per accedere all'admin
+sudo -u agrisecure /opt/agrisecure/backend/venv/bin/python /opt/agrisecure/backend/manage.py createsuperuser
+
+# (Opzionale) Configura notifiche
+sudo nano /opt/agrisecure/backend/.env
+```
+
+### Accesso
+
+- **Admin Django**: http://IP_CONTAINER/admin/
+- **API Docs (Swagger)**: http://IP_CONTAINER/api/v1/docs/
+- **API Docs (ReDoc)**: http://IP_CONTAINER/api/v1/redoc/
+
+---
+
+## 📁 Struttura Progetto
+
+```
+/opt/agrisecure/backend/
+├── agrisecure/              # Configurazione Django
+│   ├── settings.py
+│   ├── urls.py
+│   ├── celery.py
+│   └── wsgi.py
+├── apps/
+│   ├── core/                # MQTT publisher/subscriber
+│   ├── nodes/               # Modelli nodi IoT
+│   ├── sensors/             # Dati sensori
+│   ├── security/            # Allarmi e sicurezza
+│   ├── notifications/       # Sistema notifiche
+│   └── api/                 # REST API
+├── scripts/
+│   ├── install.sh           # Installazione automatica
+│   ├── install_services.sh  # Installa servizi systemd
+│   ├── start_all.sh         # Avvia tutti i servizi
+│   └── stop_all.sh          # Ferma tutti i servizi
+├── logs/                    # File di log
+├── media/                   # File caricati
+├── staticfiles/             # File statici
+├── venv/                    # Ambiente virtuale Python
+├── requirements.txt
+├── .env                     # Configurazione (NON in git)
+└── .env.example             # Template configurazione
 ```
 
 ---
@@ -194,10 +127,10 @@ sudo -u agrisecure mkdir -p logs media
 
 ```bash
 # Avvia tutti i servizi
-sudo bash /opt/agrisecure/scripts/start_all.sh
+sudo bash /opt/agrisecure/backend/scripts/start_all.sh
 
 # Ferma tutti i servizi
-sudo bash /opt/agrisecure/scripts/stop_all.sh
+sudo bash /opt/agrisecure/backend/scripts/stop_all.sh
 
 # Stato servizi
 sudo systemctl status agrisecure-web
@@ -221,42 +154,10 @@ sudo systemctl restart agrisecure-web
 | `agrisecure-celery` | Task worker asincroni | - |
 | `agrisecure-celery-beat` | Scheduler task periodici | - |
 | `agrisecure-mqtt` | Subscriber MQTT | - |
-| `nginx` | Reverse proxy | 80/443 |
-| `mosquitto` | MQTT Broker | 1883/9001 |
+| `nginx` | Reverse proxy | 80 |
+| `mosquitto` | MQTT Broker | 1883 |
 | `redis` | Cache/Broker | 6379 |
 | `postgresql` | Database | 5432 |
-
----
-
-## 📁 Struttura Progetto
-
-```
-/opt/agrisecure/
-├── agrisecure/              # Configurazione Django
-│   ├── settings.py
-│   ├── urls.py
-│   ├── celery.py
-│   └── wsgi.py
-├── apps/
-│   ├── core/                # MQTT publisher/subscriber
-│   ├── nodes/               # Modelli nodi IoT
-│   ├── sensors/             # Dati sensori
-│   ├── security/            # Allarmi e sicurezza
-│   ├── notifications/       # Sistema notifiche
-│   └── api/                 # REST API
-├── scripts/
-│   ├── setup.sh             # Setup iniziale
-│   ├── install_services.sh  # Installa systemd
-│   ├── start_all.sh         # Avvia servizi
-│   └── stop_all.sh          # Ferma servizi
-├── logs/                    # File di log
-├── media/                   # File caricati
-├── staticfiles/             # File statici (collectstatic)
-├── venv/                    # Ambiente virtuale Python
-├── requirements.txt
-├── .env                     # Configurazione (NON in git)
-└── .env.example             # Template configurazione
-```
 
 ---
 
@@ -289,7 +190,7 @@ GET  /api/v1/sensors/alerts/             # Alert sensori
 GET  /api/v1/security/events/            # Eventi movimento
 GET  /api/v1/security/alarms/            # Lista allarmi
 GET  /api/v1/security/alarms/active/     # Allarmi attivi
-POST /api/v1/security/alarms/{id}/action/# Azione su allarme
+POST /api/v1/security/alarms/{id}/perform_action/  # Azione su allarme
 GET  /api/v1/security/arm/               # Stato armamento
 POST /api/v1/security/arm/               # Arma/Disarma
 ```
@@ -315,7 +216,7 @@ GET  /api/v1/dashboard/charts/           # Dati grafici
 
 ## 🔔 Notifiche
 
-Configura in `.env`:
+Configura in `/opt/agrisecure/backend/.env`:
 
 ```bash
 # Telegram
@@ -324,6 +225,7 @@ TELEGRAM_CHAT_ID=-100123456789
 
 # Email
 EMAIL_HOST=smtp.gmail.com
+EMAIL_PORT=587
 EMAIL_USER=tuo@email.com
 EMAIL_PASSWORD=app_password
 
@@ -331,6 +233,11 @@ EMAIL_PASSWORD=app_password
 TWILIO_ACCOUNT_SID=AC...
 TWILIO_AUTH_TOKEN=...
 TWILIO_FROM_NUMBER=+1234567890
+```
+
+Dopo la modifica:
+```bash
+sudo systemctl restart agrisecure-celery
 ```
 
 ---
@@ -341,20 +248,20 @@ TWILIO_FROM_NUMBER=+1234567890
 cd /opt/agrisecure
 
 # Ferma servizi
-sudo bash scripts/stop_all.sh
+sudo bash backend/scripts/stop_all.sh
 
 # Pull aggiornamenti
-sudo -u agrisecure git pull
+sudo git pull
 
 # Aggiorna dipendenze
-sudo -u agrisecure venv/bin/pip install -r requirements.txt
+sudo -u agrisecure backend/venv/bin/pip install -r backend/requirements.txt
 
 # Migrazioni
-sudo -u agrisecure venv/bin/python manage.py migrate
-sudo -u agrisecure venv/bin/python manage.py collectstatic --noinput
+sudo -u agrisecure backend/venv/bin/python backend/manage.py migrate
+sudo -u agrisecure backend/venv/bin/python backend/manage.py collectstatic --noinput
 
 # Riavvia
-sudo bash scripts/start_all.sh
+sudo bash backend/scripts/start_all.sh
 ```
 
 ---
@@ -370,7 +277,7 @@ sudo journalctl -u agrisecure-web -n 50
 ls -la /run/agrisecure/
 
 # Test manuale
-cd /opt/agrisecure
+cd /opt/agrisecure/backend
 sudo -u agrisecure venv/bin/python manage.py runserver 0.0.0.0:8000
 ```
 
@@ -381,21 +288,37 @@ sudo systemctl status mosquitto
 sudo tail -f /var/log/mosquitto/mosquitto.log
 
 # Test sottoscrizione
-mosquitto_sub -h localhost -u agrisecure -P password -t "agrisecure/#" -v
+mosquitto_sub -h localhost -u agrisecure -P mqtt_secure_password -t "agrisecure/#" -v
 ```
+
+### Errore "Bad Request (400)"
+Aggiungi l'IP del container in `.env`:
+```
+ALLOWED_HOSTS=localhost,127.0.0.1,agrisecure.local,TUO_IP
+```
+Poi: `sudo systemctl restart agrisecure-web`
+
+### CSS/stili non caricati
+Verifica `/etc/nginx/sites-available/agrisecure`:
+```nginx
+location /static/ {
+    alias /opt/agrisecure/backend/staticfiles/;
+}
+```
+Poi: `sudo systemctl restart nginx`
 
 ### Database connection error
 ```bash
 # Verifica PostgreSQL
 sudo systemctl status postgresql
-sudo -u postgres psql -c "\\l"  # Lista database
+sudo -u postgres psql -c "\l"
 ```
 
 ---
 
 ## 📄 Licenza
 
-Proprietario - Turiliffiu © 2024
+Proprietario - Turiliffiu © 2024-2025
 
 ## 👥 Contatti
 
