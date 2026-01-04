@@ -183,7 +183,7 @@ L'algoritmo analizza il pattern di attivazione di 2 sensori PIR:
 
 ## 📄 Licenza
 
-Proprietario - Turiliffiu © 2024-2025
+Proprietario - Turiliffiu © 2025-2026
 
 ---
 
