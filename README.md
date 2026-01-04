@@ -249,6 +249,8 @@ L'algoritmo analizza il pattern di attivazione di 2 sensori PIR:
 
 ## 🔔 Configurazione Notifiche
 
+👉 **[Guida completa configurazione Telegram](backend/docs/TELEGRAM_SETUP.md)**
+
 Modifica il file `/opt/agrisecure/backend/.env`:
 
 ```bash
