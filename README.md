@@ -87,16 +87,40 @@ agrisecure/
 
 **Installazione automatica:**
 
+Sulla shell del nuovo Container su Proxmox:
+
 ```bash
-# Dentro il container, aggiorna e installa git
-apt update && apt install -y git
+sudo nano /etc/ssh/sshd_config
+```
+
+Modificare i seguenti parametri:
+
+```bash
+PermitRootLogin yes
+PasswordAuthentication yes
+PermitEmptyPasswords no
+```
+
+Installare ifconfig
+
+```bash
+apt update
+apt install -y net-tools
+apt install -y git
+```
+
 
 # Clona repository
+
+```bash
 cd /opt
 git clone https://github.com/turiliffiu/agrisecure.git
 cd agrisecure/backend
+```
 
 # Esegui installazione automatica
+
+```bash
 sudo bash scripts/install.sh
 ```
 
