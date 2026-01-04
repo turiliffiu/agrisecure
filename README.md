@@ -152,25 +152,6 @@ sudo nano /opt/agrisecure/backend/.env
 ```bash
 cd agrisecure/firmware
 
-# Installa PlatformIO
-pip install platformio
-
-# Compila per Gateway
-pio run -e node_gateway
-
-# Compila per Nodo Ambientale
-pio run -e node_ambient
-
-# Compila per Nodo Sicurezza
-pio run -e node_security
-
-# Upload su ESP32
-pio run -e node_gateway -t upload
-```
-
-```bash
-cd agrisecure/firmware
-
 # Crea ambiente virtuale
 python3 -m venv venv
 
@@ -198,11 +179,6 @@ pio run -e node_security -t upload
 deactivate
 
 ```
-
-
-
-
-
 
 ---
 
