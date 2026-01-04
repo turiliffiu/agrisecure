@@ -101,7 +101,7 @@ PasswordAuthentication yes
 PermitEmptyPasswords no
 ```
 
-Installare ifconfig
+Installare ifconfig e git
 
 ```bash
 apt update
