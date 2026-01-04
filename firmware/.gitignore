@@ -1,0 +1,33 @@
+# AgriSecure Firmware - .gitignore
+
+# PlatformIO
+.pio/
+.pioenvs/
+.piolibdeps/
+
+# Build
+.build/
+build/
+
+# IDE
+.idea/
+.vscode/
+*.code-workspace
+
+# Compiled
+*.o
+*.elf
+*.bin
+*.hex
+*.map
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets (se aggiungi file di configurazione)
+secrets.h
+credentials.h
+
+# Logs
+*.log
