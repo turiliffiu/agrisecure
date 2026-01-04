@@ -9,9 +9,10 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
-INSTALL_DIR="${INSTALL_DIR:-/opt/agrisecure}"
-VENV_DIR="$INSTALL_DIR/venv"
-USER="${AGRISECURE_USER:-agrisecure}"
+INSTALL_DIR="/opt/agrisecure"
+BACKEND_DIR="$INSTALL_DIR/backend"
+VENV_DIR="$BACKEND_DIR/venv"
+USER="agrisecure"
 
 echo -e "${GREEN}Installazione servizi systemd per AgriSecure...${NC}"
 
@@ -29,14 +30,14 @@ After=network.target postgresql.service redis.service
 Type=notify
 User=$USER
 Group=$USER
-WorkingDirectory=$INSTALL_DIR
+WorkingDirectory=$BACKEND_DIR
 Environment="PATH=$VENV_DIR/bin"
-EnvironmentFile=$INSTALL_DIR/.env
+EnvironmentFile=$BACKEND_DIR/.env
 ExecStart=$VENV_DIR/bin/gunicorn \\
     --workers 3 \\
     --bind unix:/run/agrisecure/gunicorn.sock \\
-    --access-logfile $INSTALL_DIR/logs/gunicorn-access.log \\
-    --error-logfile $INSTALL_DIR/logs/gunicorn-error.log \\
+    --access-logfile $BACKEND_DIR/logs/gunicorn-access.log \\
+    --error-logfile $BACKEND_DIR/logs/gunicorn-error.log \\
     --capture-output \\
     --timeout 120 \\
     agrisecure.wsgi:application
@@ -66,21 +67,16 @@ After=network.target postgresql.service redis.service
 Type=forking
 User=$USER
 Group=$USER
-WorkingDirectory=$INSTALL_DIR
+WorkingDirectory=$BACKEND_DIR
 Environment="PATH=$VENV_DIR/bin"
-EnvironmentFile=$INSTALL_DIR/.env
+EnvironmentFile=$BACKEND_DIR/.env
 ExecStart=$VENV_DIR/bin/celery -A agrisecure multi start worker \\
-    --pidfile=$INSTALL_DIR/logs/celery-%n.pid \\
-    --logfile=$INSTALL_DIR/logs/celery-%n.log \\
+    --pidfile=$BACKEND_DIR/logs/celery-%n.pid \\
+    --logfile=$BACKEND_DIR/logs/celery-%n.log \\
     --loglevel=INFO \\
     --concurrency=2
 ExecStop=$VENV_DIR/bin/celery -A agrisecure multi stopwait worker \\
-    --pidfile=$INSTALL_DIR/logs/celery-%n.pid
-ExecReload=$VENV_DIR/bin/celery -A agrisecure multi restart worker \\
-    --pidfile=$INSTALL_DIR/logs/celery-%n.pid \\
-    --logfile=$INSTALL_DIR/logs/celery-%n.log \\
-    --loglevel=INFO \\
-    --concurrency=2
+    --pidfile=$BACKEND_DIR/logs/celery-%n.pid
 Restart=always
 RestartSec=10
 
@@ -102,13 +98,13 @@ After=network.target postgresql.service redis.service agrisecure-celery.service
 Type=simple
 User=$USER
 Group=$USER
-WorkingDirectory=$INSTALL_DIR
+WorkingDirectory=$BACKEND_DIR
 Environment="PATH=$VENV_DIR/bin"
-EnvironmentFile=$INSTALL_DIR/.env
+EnvironmentFile=$BACKEND_DIR/.env
 ExecStart=$VENV_DIR/bin/celery -A agrisecure beat \\
     --loglevel=INFO \\
     --scheduler django_celery_beat.schedulers:DatabaseScheduler \\
-    --pidfile=$INSTALL_DIR/logs/celery-beat.pid
+    --pidfile=$BACKEND_DIR/logs/celery-beat.pid
 Restart=always
 RestartSec=10
 
@@ -130,14 +126,12 @@ After=network.target postgresql.service mosquitto.service
 Type=simple
 User=$USER
 Group=$USER
-WorkingDirectory=$INSTALL_DIR
+WorkingDirectory=$BACKEND_DIR
 Environment="PATH=$VENV_DIR/bin"
-EnvironmentFile=$INSTALL_DIR/.env
+EnvironmentFile=$BACKEND_DIR/.env
 ExecStart=$VENV_DIR/bin/python manage.py mqtt_subscriber
 Restart=always
 RestartSec=10
-StandardOutput=append:$INSTALL_DIR/logs/mqtt-subscriber.log
-StandardError=append:$INSTALL_DIR/logs/mqtt-subscriber-error.log
 
 [Install]
 WantedBy=multi-user.target
@@ -148,6 +142,9 @@ EOF
 # ============================================
 echo -e "${GREEN}[5/5] Configurazione Nginx...${NC}"
 
+# Ottieni IP del container
+CONTAINER_IP=$(hostname -I | awk '{print $1}')
+
 sudo tee /etc/nginx/sites-available/agrisecure > /dev/null << EOF
 # AgriSecure IoT System - Nginx Configuration
 
@@ -157,10 +154,7 @@ upstream agrisecure_backend {
 
 server {
     listen 80;
-    server_name agrisecure.local localhost _;
-
-    # Redirect HTTP to HTTPS (decommentare in produzione)
-    # return 301 https://\$server_name\$request_uri;
+    server_name agrisecure.local localhost $CONTAINER_IP;
 
     # Logs
     access_log /var/log/nginx/agrisecure-access.log;
@@ -171,14 +165,14 @@ server {
 
     # Static files
     location /static/ {
-        alias $INSTALL_DIR/staticfiles/;
+        alias $BACKEND_DIR/staticfiles/;
         expires 30d;
         add_header Cache-Control "public, immutable";
     }
 
     # Media files
     location /media/ {
-        alias $INSTALL_DIR/media/;
+        alias $BACKEND_DIR/media/;
         expires 7d;
     }
 
@@ -191,7 +185,7 @@ server {
         proxy_set_header X-Forwarded-Proto \$scheme;
         proxy_redirect off;
         
-        # WebSocket support (per future implementazioni)
+        # WebSocket support
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection "upgrade";
@@ -208,17 +202,6 @@ server {
         access_log off;
     }
 }
-
-# HTTPS Configuration (decommentare e configurare certificati)
-# server {
-#     listen 443 ssl http2;
-#     server_name agrisecure.local;
-#
-#     ssl_certificate /etc/letsencrypt/live/agrisecure.local/fullchain.pem;
-#     ssl_certificate_key /etc/letsencrypt/live/agrisecure.local/privkey.pem;
-#
-#     # ... resto della configurazione come sopra
-# }
 EOF
 
 # Abilita sito Nginx
@@ -258,5 +241,5 @@ echo -e "  ${YELLOW}sudo systemctl status agrisecure-*${NC}       # Stato tutti 
 echo -e "  ${YELLOW}sudo journalctl -u agrisecure-web -f${NC}     # Log in tempo reale"
 echo ""
 echo -e "Avvia tutti i servizi:"
-echo -e "  ${YELLOW}sudo bash $INSTALL_DIR/scripts/start_all.sh${NC}"
+echo -e "  ${YELLOW}sudo bash $BACKEND_DIR/scripts/start_all.sh${NC}"
 echo ""
