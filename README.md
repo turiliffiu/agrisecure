@@ -110,7 +110,7 @@ apt install -y git
 ```
 
 
-# Clona repository
+Clona repository
 
 ```bash
 cd /opt
@@ -118,7 +118,7 @@ git clone https://github.com/turiliffiu/agrisecure.git
 cd agrisecure/backend
 ```
 
-# Esegui installazione automatica
+Esegui installazione automatica
 
 ```bash
 sudo bash scripts/install.sh
