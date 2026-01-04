@@ -279,7 +279,7 @@ class AlarmViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
     
     @action(detail=True, methods=['post'])
-    def action(self, request, pk=None):
+    def perform_action(self, request, pk=None):
         """Esegui azione su allarme"""
         alarm = self.get_object()
         serializer = AlarmActionSerializer(data=request.data)
