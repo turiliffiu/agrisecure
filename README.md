@@ -13,7 +13,7 @@ AgriSecure è un sistema IoT end-to-end per:
 - 🌡️ **Monitoraggio Ambientale**: temperatura, umidità, pressione, luminosità, umidità suolo
 - 🚨 **Sicurezza Perimetrale**: rilevamento movimento con discriminazione persona/animale
 - 📡 **Connettività**: rete mesh WiFi/ESP-NOW + gateway 4G/LTE
-- 📱 **Dashboard & API**: interfaccia web e API REST per controllo remoto
+- 📱 **Dashboard**: interfaccia web Django Templates per controllo remoto
 - 🔔 **Notifiche**: Telegram, SMS, Email, Push notifications
 
 ---
@@ -22,9 +22,9 @@ AgriSecure è un sistema IoT end-to-end per:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                     📱 DASHBOARD/APP                        │
+│                     📱 DASHBOARD/APP (Django)               │
 └─────────────────────────┬───────────────────────────────────┘
-                          │ REST API
+                          │ HTTP / REST API
 ┌─────────────────────────┴───────────────────────────────────┐
 │                   🖥️ BACKEND (Django)                       │
 │              PostgreSQL │ Redis │ Celery                    │
