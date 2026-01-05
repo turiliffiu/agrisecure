@@ -60,13 +60,13 @@
         <!-- Batteria -->
         <div class="bg-white rounded-xl shadow-sm p-6">
             <div class="flex items-center space-x-3">
-                <div class="p-2 rounded-lg {% if node.battery_level and node.battery_level < 20 %}bg-red-100{% else %}bg-green-100{% endif %}">
-                    <i data-lucide="battery" class="w-5 h-5 {% if node.battery_level and node.battery_level < 20 %}text-red-600{% else %}text-green-600{% endif %}"></i>
+                <div class="p-2 rounded-lg {% if node.battery_percentage and node.battery_percentage < 20 %}bg-red-100{% else %}bg-green-100{% endif %}">
+                    <i data-lucide="battery" class="w-5 h-5 {% if node.battery_percentage and node.battery_percentage < 20 %}text-red-600{% else %}text-green-600{% endif %}"></i>
                 </div>
                 <div>
                     <p class="text-sm text-gray-500">Batteria</p>
                     <p class="font-semibold text-gray-900">
-                        {% if node.battery_level != None %}{{ node.battery_level }}%{% else %}-{% endif %}
+                        {% if node.battery_percentage != None %}{{ node.battery_percentage }}%{% else %}-{% endif %}
                     </p>
                 </div>
             </div>
@@ -205,7 +205,7 @@
                             {% if reading.light %}{{ reading.light|floatformat:0 }} lux{% else %}-{% endif %}
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {% if reading.soil_moisture %}{{ reading.soil_moisture|floatformat:0 }}%{% else %}-{% endif %}
+                            {% if reading.soil_moisture_percent %}{{ reading.soil_moisture_percent|floatformat:0 }}%{% else %}-{% endif %}
                         </td>
                     </tr>
                     {% endfor %}

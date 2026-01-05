@@ -99,12 +99,12 @@
             <div class="grid grid-cols-3 gap-4 text-sm">
                 <div class="flex items-center space-x-2">
                     <i data-lucide="battery" class="w-4 h-4 
-                        {% if node.battery_level == None %}text-gray-400
-                        {% elif node.battery_level < 20 %}text-red-500
-                        {% elif node.battery_level < 50 %}text-yellow-500
+                        {% if node.battery_percentage == None %}text-gray-400
+                        {% elif node.battery_percentage < 20 %}text-red-500
+                        {% elif node.battery_percentage < 50 %}text-yellow-500
                         {% else %}text-green-500{% endif %}"></i>
                     <span class="text-gray-600">
-                        {% if node.battery_level != None %}{{ node.battery_level }}%{% else %}-{% endif %}
+                        {% if node.battery_percentage != None %}{{ node.battery_percentage }}%{% else %}-{% endif %}
                     </span>
                 </div>
                 <div class="flex items-center space-x-2">
