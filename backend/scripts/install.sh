@@ -112,7 +112,7 @@ apt install -y \
     python3 python3-pip python3-venv python3-dev \
     postgresql postgresql-contrib libpq-dev \
     redis-server mosquitto mosquitto-clients \
-    nginx git build-essential curl > /dev/null 2>&1
+    nginx git build-essential curl
 
 print_success "Dipendenze installate"
 
@@ -138,7 +138,7 @@ if [ -d "$INSTALL_DIR" ]; then
     cd $INSTALL_DIR
     git pull > /dev/null 2>&1
 else
-    git clone $REPO_URL $INSTALL_DIR > /dev/null 2>&1
+    git clone $REPO_URL $INSTALL_DIR
 fi
 
 # Crea directory necessarie
@@ -159,7 +159,7 @@ print_step 5 "Configurazione PostgreSQL..."
 if sudo -u postgres psql -lqt | cut -d \| -f 1 | grep -qw agrisecure; then
     print_warning "Database agrisecure già esistente"
 else
-    sudo -u postgres psql << EOF > /dev/null 2>&1
+    sudo -u postgres psql << EOF
 CREATE USER agrisecure WITH PASSWORD '$DB_PASSWORD';
 CREATE DATABASE agrisecure OWNER agrisecure;
 GRANT ALL PRIVILEGES ON DATABASE agrisecure TO agrisecure;
@@ -172,7 +172,7 @@ fi
 # ============================================================================
 print_step 6 "Configurazione Redis..."
 
-systemctl enable redis-server > /dev/null 2>&1
+systemctl enable redis-server
 systemctl start redis-server
 print_success "Redis avviato"
 
@@ -182,7 +182,7 @@ print_success "Redis avviato"
 print_step 7 "Configurazione Mosquitto MQTT..."
 
 # Crea utente MQTT
-mosquitto_passwd -c -b /etc/mosquitto/passwd agrisecure "$MQTT_PASSWORD" > /dev/null 2>&1
+mosquitto_passwd -c -b /etc/mosquitto/passwd agrisecure "$MQTT_PASSWORD"
 
 # Configurazione Mosquitto (senza persistence_location per evitare duplicati)
 tee /etc/mosquitto/conf.d/agrisecure.conf > /dev/null << 'EOF'
@@ -191,7 +191,7 @@ allow_anonymous false
 password_file /etc/mosquitto/passwd
 EOF
 
-systemctl enable mosquitto > /dev/null 2>&1
+systemctl enable mosquitto
 systemctl restart mosquitto
 print_success "Mosquitto MQTT configurato"
 
@@ -202,8 +202,8 @@ print_step 8 "Creazione ambiente virtuale Python..."
 
 cd $BACKEND_DIR
 sudo -u $USER python3 -m venv venv
-sudo -u $USER venv/bin/pip install --upgrade pip > /dev/null 2>&1
-sudo -u $USER venv/bin/pip install -r requirements.txt > /dev/null 2>&1
+sudo -u $USER venv/bin/pip install --upgrade pip
+sudo -u $USER venv/bin/pip install -r requirements.txt
 print_success "Ambiente virtuale creato e dipendenze installate"
 
 # ============================================================================
@@ -260,8 +260,19 @@ print_success "File .env creato con SECRET_KEY casuale"
 print_step 10 "Inizializzazione database Django..."
 
 cd $BACKEND_DIR
-sudo -u $USER venv/bin/python manage.py migrate > /dev/null 2>&1
-sudo -u $USER venv/bin/python manage.py collectstatic --noinput > /dev/null 2>&1
+
+# Crea le migrazioni per tutti i modelli
+echo "  Creazione migrazioni..."
+sudo -u $USER venv/bin/python manage.py makemigrations nodes sensors security core
+
+# Applica tutte le migrazioni
+echo "  Applicazione migrazioni..."
+sudo -u $USER venv/bin/python manage.py migrate
+
+# Raccogli file statici
+echo "  Raccolta file statici..."
+sudo -u $USER venv/bin/python manage.py collectstatic --noinput
+
 print_success "Database inizializzato e file statici raccolti"
 
 # ============================================================================
@@ -432,10 +443,10 @@ EOF
 
 # Abilita sito
 ln -sf /etc/nginx/sites-available/agrisecure /etc/nginx/sites-enabled/
-rm -f /etc/nginx/sites-enabled/default 2>/dev/null || true
+rm -f /etc/nginx/sites-enabled/default 2
 
 # Test e riavvio Nginx
-nginx -t > /dev/null 2>&1
+nginx -t
 systemctl restart nginx
 
 print_success "Nginx configurato"
@@ -448,10 +459,10 @@ echo -e "${BLUE}Avvio servizi...${NC}"
 
 systemctl daemon-reload
 
-systemctl enable agrisecure-web > /dev/null 2>&1
-systemctl enable agrisecure-celery > /dev/null 2>&1
-systemctl enable agrisecure-celery-beat > /dev/null 2>&1
-systemctl enable agrisecure-mqtt > /dev/null 2>&1
+systemctl enable agrisecure-web
+systemctl enable agrisecure-celery
+systemctl enable agrisecure-celery-beat
+systemctl enable agrisecure-mqtt
 
 systemctl start agrisecure-web
 systemctl start agrisecure-celery
@@ -481,10 +492,11 @@ done
 
 echo ""
 echo -e "${BLUE}Accessi:${NC}"
+echo -e "  Dashboard Web: ${GREEN}http://$CONTAINER_IP/${NC}"
 echo -e "  Admin Django:  ${GREEN}http://$CONTAINER_IP/admin/${NC}"
 echo -e "  API Docs:      ${GREEN}http://$CONTAINER_IP/api/v1/docs/${NC}"
 echo ""
-echo -e "${YELLOW}IMPORTANTE: Crea un superuser per accedere all'admin:${NC}"
+echo -e "${YELLOW}IMPORTANTE: Crea un superuser per accedere al sistema:${NC}"
 echo -e "  ${GREEN}sudo -u agrisecure $VENV_DIR/bin/python $BACKEND_DIR/manage.py createsuperuser${NC}"
 echo ""
 echo -e "${YELLOW}Configura Telegram/Email modificando:${NC}"
