@@ -212,7 +212,7 @@ print_success "Ambiente virtuale creato e dipendenze installate"
 print_step 9 "Creazione file di configurazione..."
 
 # Genera SECRET_KEY casuale
-SECRET_KEY=$(python3 -c 'import secrets; print(secrets.token_urlsafe(50))')
+SECRET_KEY=$(python3 -c 'import secrets; print(secrets.token_urlsafe(45))')
 
 # Ottieni IP del container
 CONTAINER_IP=$(hostname -I | awk '{print $1}')
