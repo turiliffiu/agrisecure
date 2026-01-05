@@ -142,10 +142,163 @@ sudo -u agrisecure /opt/agrisecure/backend/venv/bin/python /opt/agrisecure/backe
 sudo nano /opt/agrisecure/backend/.env
 ```
 
-**Accedi alla dashboard:**
-- **Admin Django**: `http://IP_CONTAINER/admin/`
-- **API Docs (Swagger)**: `http://IP_CONTAINER/api/v1/docs/`
-- **API Docs (ReDoc)**: `http://IP_CONTAINER/api/v1/redoc/`
+### Accesso
+
+- **Dashboard Web**: http://IP_CONTAINER/
+- **Admin Django**: http://IP_CONTAINER/admin/
+- **API Docs**: http://IP_CONTAINER/api/v1/
+
+---
+
+## 📁 Struttura Progetto
+
+```
+/opt/agrisecure/backend/
+├── agrisecure/              # Configurazione Django
+│   ├── settings.py
+│   ├── urls.py
+│   ├── celery.py
+│   └── wsgi.py
+├── apps/
+│   ├── core/                # MQTT publisher/subscriber
+│   ├── nodes/               # Modelli nodi IoT
+│   ├── sensors/             # Dati sensori
+│   ├── security/            # Allarmi e sicurezza
+│   ├── notifications/       # Sistema notifiche
+│   ├── api/                 # REST API
+│   └── frontend/            # Dashboard web Django
+├── templates/               # Template HTML
+├── static/                  # File statici (CSS, JS)
+├── scripts/
+│   ├── install.sh           # Installazione automatica
+│   ├── install_services.sh  # Installa servizi systemd
+│   ├── start_all.sh         # Avvia tutti i servizi
+│   └── stop_all.sh          # Ferma tutti i servizi
+├── logs/                    # File di log
+├── media/                   # File caricati
+├── staticfiles/             # File statici raccolti
+├── venv/                    # Ambiente virtuale Python
+├── requirements.txt
+├── .env                     # Configurazione (NON in git)
+└── .env.example             # Template configurazione
+```
+
+---
+
+## 🔧 Gestione Servizi
+
+### Comandi Utili
+
+```bash
+# Avvia tutti i servizi
+sudo bash /opt/agrisecure/backend/scripts/start_all.sh
+
+# Ferma tutti i servizi
+sudo bash /opt/agrisecure/backend/scripts/stop_all.sh
+
+# Stato servizi
+sudo systemctl status agrisecure-web
+sudo systemctl status agrisecure-celery
+sudo systemctl status agrisecure-celery-beat
+sudo systemctl status agrisecure-mqtt
+
+# Log in tempo reale
+sudo journalctl -u agrisecure-web -f
+sudo journalctl -u agrisecure-mqtt -f
+
+# Riavvio singolo servizio
+sudo systemctl restart agrisecure-web
+```
+
+### Servizi Installati
+
+| Servizio | Descrizione | Porta |
+|----------|-------------|-------|
+| `agrisecure-web` | Django + Gunicorn | unix socket |
+| `agrisecure-celery` | Task worker asincroni | - |
+| `agrisecure-celery-beat` | Scheduler task periodici | - |
+| `agrisecure-mqtt` | Subscriber MQTT | - |
+| `nginx` | Reverse proxy | 80 |
+| `mosquitto` | MQTT Broker | 1883 |
+| `redis` | Cache/Broker | 6379 |
+| `postgresql` | Database | 5432 |
+
+---
+
+## 🖥️ Dashboard Web
+
+La dashboard è integrata nel backend Django e offre:
+
+| Pagina | URL | Descrizione |
+|--------|-----|-------------|
+| Login | `/login/` | Autenticazione |
+| Dashboard | `/` | Panoramica sistema |
+| Nodi | `/nodes/` | Lista nodi IoT |
+| Dettaglio Nodo | `/nodes/<id>/` | Info singolo nodo |
+| Sensori | `/sensors/` | Grafici sensori |
+| Allarmi | `/alarms/` | Gestione allarmi |
+| Armamento | `/arm/` | Arma/disarma sistema |
+| Impostazioni | `/settings/` | Configurazione |
+
+### Tecnologie Dashboard
+- **Tailwind CSS** (via CDN) - Styling responsive
+- **Chart.js** - Grafici interattivi
+- **Lucide Icons** - Icone
+
+---
+
+## 🔌 API Endpoints
+
+### Autenticazione
+```
+POST /api/v1/auth/token/          # Login, ottieni JWT
+POST /api/v1/auth/token/refresh/  # Refresh token
+```
+
+### Nodi
+```
+GET    /api/v1/nodes/                    # Lista nodi
+GET    /api/v1/nodes/{id}/               # Dettaglio nodo
+GET    /api/v1/nodes/{id}/heartbeats/    # Storico heartbeat
+POST   /api/v1/nodes/{id}/send_command/  # Invia comando
+```
+
+### Sensori
+```
+GET  /api/v1/sensors/readings/           # Letture sensori
+GET  /api/v1/sensors/readings/latest/    # Ultime letture
+GET  /api/v1/sensors/readings/chart_data/# Dati grafici
+GET  /api/v1/sensors/alerts/             # Alert sensori
+```
+
+### Sicurezza
+```
+GET  /api/v1/security/events/            # Eventi movimento
+GET  /api/v1/security/alarms/            # Lista allarmi
+GET  /api/v1/security/alarms/active/     # Allarmi attivi
+POST /api/v1/security/alarms/{id}/perform_action/  # Azione su allarme
+GET  /api/v1/security/arm/               # Stato armamento
+POST /api/v1/security/arm/               # Arma/Disarma
+```
+
+### Dashboard
+```
+GET  /api/v1/dashboard/summary/          # Riepilogo
+GET  /api/v1/dashboard/charts/           # Dati grafici
+```
+
+---
+
+## 📡 Topic MQTT
+
+| Topic | Direzione | Descrizione |
+|-------|-----------|-------------|
+| `agrisecure/+/sensors/#` | IN | Dati sensori |
+| `agrisecure/+/security/#` | IN | Eventi sicurezza |
+| `agrisecure/+/status` | IN | Heartbeat |
+| `agrisecure/{gw}/command` | OUT | Comandi |
+
+---
 
 ### 2. Compila il Firmware
 
