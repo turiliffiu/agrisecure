@@ -8,8 +8,7 @@ Il simulatore è già incluso nell'ambiente AgriSecure. Per usarlo:
 
 ```bash
 cd /opt/agrisecure/backend
-source venv/bin/activate
-python scripts/simulator.py
+sudo -u agrisecure venv/bin/python scripts/simulator.py
 ```
 
 ## 📋 Requisiti
