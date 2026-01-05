@@ -1,6 +1,7 @@
 """
-AgriSecure URL Configuration
+AgriSecure IoT System - Main URLs
 """
+
 from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
@@ -13,11 +14,19 @@ urlpatterns = [
     # API v1
     path('api/v1/', include('apps.api.urls')),
     
-    # Frontend (Dashboard)
-    path('', include('apps.frontend.urls')),
+    # Health check
+    path('health/', include('apps.core.urls')),
+    
+    # Frontend
+    path('', include('apps.frontend.urls')), 
 ]
 
-# Serve static and media files in development
+# Static/Media files in development
 if settings.DEBUG:
     urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+
+# Admin customization
+admin.site.site_header = 'AgriSecure IoT Admin'
+admin.site.site_title = 'AgriSecure'
+admin.site.index_title = 'Pannello di Controllo'
