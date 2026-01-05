@@ -522,7 +522,7 @@ Poi: `sudo systemctl restart nginx`
 
 ## 📄 Licenza
 
-Proprietario - Turiliffiu © 2024-2025
+Proprietario - Turiliffiu © 2025-2026
 
 ---
 
