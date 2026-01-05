@@ -1,0 +1,253 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Dashboard - AgriSecure{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Header -->
+    <div class="flex items-center justify-between">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-900">Dashboard</h1>
+            <p class="text-gray-500">Panoramica del sistema AgriSecure</p>
+        </div>
+        <button onclick="location.reload()" class="flex items-center px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50">
+            <i data-lucide="refresh-cw" class="w-4 h-4 mr-2"></i>
+            Aggiorna
+        </button>
+    </div>
+    
+    <!-- Stats Grid -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <!-- Nodi Online -->
+        <a href="{% url 'frontend:nodes' %}" class="bg-white rounded-xl shadow-sm p-6 hover:shadow-lg transition-shadow">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-sm font-medium text-gray-500">Nodi Online</p>
+                    <p class="text-3xl font-bold text-gray-900 mt-1">{{ nodes_online }}</p>
+                    <p class="text-sm text-gray-500 mt-1">su {{ total_nodes }} totali</p>
+                </div>
+                <div class="p-3 rounded-full bg-green-100 text-green-600">
+                    <i data-lucide="wifi" class="w-6 h-6"></i>
+                </div>
+            </div>
+        </a>
+        
+        <!-- Nodi Offline -->
+        <a href="{% url 'frontend:nodes' %}?status=offline" class="bg-white rounded-xl shadow-sm p-6 hover:shadow-lg transition-shadow">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-sm font-medium text-gray-500">Nodi Offline</p>
+                    <p class="text-3xl font-bold {% if nodes_offline > 0 %}text-red-600{% else %}text-gray-900{% endif %} mt-1">{{ nodes_offline }}</p>
+                </div>
+                <div class="p-3 rounded-full {% if nodes_offline > 0 %}bg-red-100 text-red-600{% else %}bg-green-100 text-green-600{% endif %}">
+                    <i data-lucide="wifi-off" class="w-6 h-6"></i>
+                </div>
+            </div>
+        </a>
+        
+        <!-- Allarmi Attivi -->
+        <a href="{% url 'frontend:alarms' %}?status=active" class="bg-white rounded-xl shadow-sm p-6 hover:shadow-lg transition-shadow">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-sm font-medium text-gray-500">Allarmi Attivi</p>
+                    <p class="text-3xl font-bold {% if active_alarms > 0 %}text-red-600{% else %}text-gray-900{% endif %} mt-1">{{ active_alarms }}</p>
+                    <p class="text-sm text-gray-500 mt-1">{{ alarms_today }} oggi</p>
+                </div>
+                <div class="p-3 rounded-full {% if active_alarms > 0 %}bg-red-100 text-red-600{% else %}bg-green-100 text-green-600{% endif %}">
+                    <i data-lucide="bell" class="w-6 h-6"></i>
+                </div>
+            </div>
+        </a>
+        
+        <!-- Stato Sistema -->
+        <a href="{% url 'frontend:arm' %}" class="bg-white rounded-xl shadow-sm p-6 hover:shadow-lg transition-shadow">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-sm font-medium text-gray-500">Sistema</p>
+                    <p class="text-3xl font-bold {% if system_armed %}text-green-600{% else %}text-yellow-600{% endif %} mt-1">
+                        {% if system_armed %}ARMATO{% else %}DISARMATO{% endif %}
+                    </p>
+                    {% if arm_mode %}<p class="text-sm text-gray-500 mt-1">{{ arm_mode }}</p>{% endif %}
+                </div>
+                <div class="p-3 rounded-full {% if system_armed %}bg-green-100 text-green-600{% else %}bg-yellow-100 text-yellow-600{% endif %}">
+                    <i data-lucide="{% if system_armed %}shield{% else %}shield-off{% endif %}" class="w-6 h-6"></i>
+                </div>
+            </div>
+        </a>
+    </div>
+    
+    <!-- Sensori Attuali -->
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div class="bg-white rounded-xl shadow-sm p-6">
+            <div class="flex items-center space-x-3">
+                <div class="p-2 bg-red-100 rounded-lg">
+                    <i data-lucide="thermometer" class="w-5 h-5 text-red-600"></i>
+                </div>
+                <div>
+                    <p class="text-sm text-gray-500">Temperatura</p>
+                    <p class="text-2xl font-bold text-gray-900">
+                        {% if latest_temperature %}{{ latest_temperature|floatformat:1 }}°C{% else %}-{% endif %}
+                    </p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="bg-white rounded-xl shadow-sm p-6">
+            <div class="flex items-center space-x-3">
+                <div class="p-2 bg-blue-100 rounded-lg">
+                    <i data-lucide="droplets" class="w-5 h-5 text-blue-600"></i>
+                </div>
+                <div>
+                    <p class="text-sm text-gray-500">Umidità</p>
+                    <p class="text-2xl font-bold text-gray-900">
+                        {% if latest_humidity %}{{ latest_humidity|floatformat:0 }}%{% else %}-{% endif %}
+                    </p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="bg-white rounded-xl shadow-sm p-6">
+            <div class="flex items-center space-x-3">
+                <div class="p-2 bg-amber-100 rounded-lg">
+                    <i data-lucide="sun" class="w-5 h-5 text-amber-600"></i>
+                </div>
+                <div>
+                    <p class="text-sm text-gray-500">Umidità Suolo</p>
+                    <p class="text-2xl font-bold text-gray-900">
+                        {% if latest_soil %}{{ latest_soil|floatformat:0 }}%{% else %}-{% endif %}
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Grafico e Allarmi -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Grafico -->
+        <div class="lg:col-span-2 bg-white rounded-xl shadow-sm p-6">
+            <h3 class="text-lg font-semibold text-gray-900 mb-4">Andamento Ultime 24 Ore</h3>
+            <div class="h-72">
+                <canvas id="sensorChart"></canvas>
+            </div>
+        </div>
+        
+        <!-- Allarmi Attivi -->
+        <div class="bg-white rounded-xl shadow-sm p-6">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-semibold text-gray-900">Allarmi Attivi</h3>
+                <a href="{% url 'frontend:alarms' %}" class="text-sm text-agri-600 hover:text-agri-700">
+                    Vedi tutti →
+                </a>
+            </div>
+            
+            {% if recent_alarms %}
+            <div class="space-y-3">
+                {% for alarm in recent_alarms %}
+                <div class="border-l-4 p-3 rounded-r-lg 
+                    {% if alarm.priority == 'critical' %}border-l-red-500 bg-red-50
+                    {% elif alarm.priority == 'high' %}border-l-orange-500 bg-orange-50
+                    {% elif alarm.priority == 'medium' %}border-l-yellow-500 bg-yellow-50
+                    {% else %}border-l-blue-500 bg-blue-50{% endif %}">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <p class="font-medium text-gray-900">
+                                {% if alarm.classification == 'person' %}🧑 Persona
+                                {% elif alarm.classification == 'tamper' %}⚠️ Manomissione
+                                {% elif alarm.classification == 'animal_lg' %}🦊 Animale grande
+                                {% elif alarm.classification == 'animal_sm' %}🐈 Animale piccolo
+                                {% else %}❓ Sconosciuto{% endif %}
+                            </p>
+                            <p class="text-sm text-gray-600">{{ alarm.node.name|default:alarm.node.node_id }}</p>
+                        </div>
+                        <span class="text-xs text-gray-500">{{ alarm.triggered_at|time:"H:i" }}</span>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="flex flex-col items-center justify-center h-48 text-gray-500">
+                <i data-lucide="shield" class="w-12 h-12 text-green-500 mb-2"></i>
+                <p>Nessun allarme attivo</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    
+    <!-- Avviso Batteria -->
+    {% if battery_warnings > 0 %}
+    <div class="bg-yellow-50 border border-yellow-200 rounded-xl p-4 flex items-center">
+        <i data-lucide="battery-low" class="w-6 h-6 text-yellow-600 mr-3"></i>
+        <div>
+            <p class="font-medium text-yellow-800">Attenzione Batterie</p>
+            <p class="text-sm text-yellow-700">
+                {{ battery_warnings }} nod{{ battery_warnings|pluralize:"o,i" }} 
+                ha{{ battery_warnings|pluralize:",nno" }} la batteria sotto il 20%
+            </p>
+        </div>
+        <a href="{% url 'frontend:nodes' %}?battery=low" class="ml-auto px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700">
+            Verifica
+        </a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Dati per il grafico
+    const chartData = {{ chart_data|safe }};
+    
+    // Inizializza grafico
+    const ctx = document.getElementById('sensorChart').getContext('2d');
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: chartData.labels,
+            datasets: [
+                {
+                    label: 'Temperatura (°C)',
+                    data: chartData.temperature,
+                    borderColor: '#ef4444',
+                    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                    tension: 0.3,
+                    fill: false
+                },
+                {
+                    label: 'Umidità (%)',
+                    data: chartData.humidity,
+                    borderColor: '#3b82f6',
+                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                    tension: 0.3,
+                    fill: false
+                },
+                {
+                    label: 'Suolo (%)',
+                    data: chartData.soil,
+                    borderColor: '#f59e0b',
+                    backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                    tension: 0.3,
+                    fill: false
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: false
+                }
+            }
+        }
+    });
+    
+    // Auto-refresh ogni 60 secondi
+    setTimeout(() => location.reload(), 60000);
+</script>
+{% endblock %}
