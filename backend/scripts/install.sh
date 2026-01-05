@@ -136,7 +136,7 @@ print_step 4 "Download repository da GitHub..."
 if [ -d "$INSTALL_DIR" ]; then
     print_warning "Directory $INSTALL_DIR già esistente, aggiornamento..."
     cd $INSTALL_DIR
-    git pull > /dev/null 2>&1
+    git pull
 else
     git clone $REPO_URL $INSTALL_DIR
 fi
