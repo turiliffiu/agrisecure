@@ -1,54 +1,83 @@
 {% extends 'base.html' %}
-{% load static %}
 
-{% block title %}Nodi - AgriSecure{% endblock %}
+{% block title %}Nodi IoT - AgriSecure{% endblock %}
 
 {% block content %}
 <div class="space-y-6">
     <!-- Header -->
-    <div>
-        <h1 class="text-2xl font-bold text-gray-900">Nodi IoT</h1>
-        <p class="text-gray-500">Gestisci e monitora i nodi del sistema</p>
+    <div class="flex items-center justify-between">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-900">Nodi IoT</h1>
+            <p class="text-gray-500">Gestisci e monitora i nodi del sistema</p>
+        </div>
+        <button onclick="location.reload()" class="flex items-center px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50">
+            <i data-lucide="refresh-cw" class="w-4 h-4 mr-2"></i>
+            Aggiorna
+        </button>
     </div>
     
-    <!-- Stats -->
+    <!-- Stats Cards -->
     <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div class="bg-white rounded-lg p-4 shadow-sm">
-            <p class="text-sm text-gray-500">Totale</p>
-            <p class="text-2xl font-bold text-gray-900">{{ total_nodes }}</p>
+        <div class="bg-white rounded-xl shadow-sm p-4">
+            <div class="flex items-center space-x-3">
+                <div class="p-2 rounded-lg bg-gray-100">
+                    <i data-lucide="radio" class="w-5 h-5 text-gray-600"></i>
+                </div>
+                <div>
+                    <p class="text-sm text-gray-500">Totale</p>
+                    <p class="text-2xl font-bold text-gray-900">{{ total_nodes }}</p>
+                </div>
+            </div>
         </div>
-        <div class="bg-white rounded-lg p-4 shadow-sm">
-            <p class="text-sm text-gray-500">Online</p>
-            <p class="text-2xl font-bold text-green-600">{{ nodes_online }}</p>
+        <div class="bg-white rounded-xl shadow-sm p-4">
+            <div class="flex items-center space-x-3">
+                <div class="p-2 rounded-lg bg-green-100">
+                    <i data-lucide="wifi" class="w-5 h-5 text-green-600"></i>
+                </div>
+                <div>
+                    <p class="text-sm text-gray-500">Online</p>
+                    <p class="text-2xl font-bold text-green-600">{{ nodes_online }}</p>
+                </div>
+            </div>
         </div>
-        <div class="bg-white rounded-lg p-4 shadow-sm">
-            <p class="text-sm text-gray-500">Offline</p>
-            <p class="text-2xl font-bold text-red-600">{{ nodes_offline }}</p>
+        <div class="bg-white rounded-xl shadow-sm p-4">
+            <div class="flex items-center space-x-3">
+                <div class="p-2 rounded-lg bg-red-100">
+                    <i data-lucide="wifi-off" class="w-5 h-5 text-red-600"></i>
+                </div>
+                <div>
+                    <p class="text-sm text-gray-500">Offline</p>
+                    <p class="text-2xl font-bold text-red-600">{{ nodes_offline }}</p>
+                </div>
+            </div>
         </div>
-        <div class="bg-white rounded-lg p-4 shadow-sm">
-            <p class="text-sm text-gray-500">Warning</p>
-            <p class="text-2xl font-bold text-yellow-600">{{ nodes_warning }}</p>
+        <div class="bg-white rounded-xl shadow-sm p-4">
+            <div class="flex items-center space-x-3">
+                <div class="p-2 rounded-lg bg-yellow-100">
+                    <i data-lucide="alert-triangle" class="w-5 h-5 text-yellow-600"></i>
+                </div>
+                <div>
+                    <p class="text-sm text-gray-500">Warning</p>
+                    <p class="text-2xl font-bold text-yellow-600">{{ nodes_warning }}</p>
+                </div>
+            </div>
         </div>
     </div>
     
-    <!-- Filters -->
+    <!-- Filtri -->
     <div class="bg-white rounded-xl shadow-sm p-4">
         <form method="get" class="flex flex-col sm:flex-row gap-4">
             <div class="flex-1 relative">
                 <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400"></i>
-                <input
-                    type="text"
-                    name="search"
-                    value="{{ request.GET.search }}"
-                    placeholder="Cerca nodo..."
-                    class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-agri-500 focus:border-agri-500"
-                >
+                <input type="text" name="search" value="{{ request.GET.search }}" 
+                    placeholder="Cerca nodo..." 
+                    class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-agri-500 focus:border-agri-500">
             </div>
             <select name="type" class="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-agri-500">
                 <option value="">Tutti i tipi</option>
-                <option value="gateway" {% if request.GET.type == 'gateway' %}selected{% endif %}>Gateway</option>
-                <option value="ambient" {% if request.GET.type == 'ambient' %}selected{% endif %}>Ambientale</option>
-                <option value="security" {% if request.GET.type == 'security' %}selected{% endif %}>Sicurezza</option>
+                <option value="GW" {% if request.GET.type == 'GW' %}selected{% endif %}>Gateway</option>
+                <option value="AMB" {% if request.GET.type == 'AMB' %}selected{% endif %}>Ambientale</option>
+                <option value="SEC" {% if request.GET.type == 'SEC' %}selected{% endif %}>Sicurezza</option>
             </select>
             <select name="status" class="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-agri-500">
                 <option value="">Tutti gli stati</option>
@@ -62,17 +91,18 @@
         </form>
     </div>
     
-    <!-- Nodes Grid -->
+    <!-- Lista Nodi -->
     {% if nodes %}
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {% for node in nodes %}
-        <a href="{% url 'frontend:node_detail' node.id %}" class="block bg-white rounded-xl shadow-sm p-6 hover:shadow-lg transition-shadow">
+        <a href="{% url 'frontend:node_detail' node.id %}" 
+           class="block bg-white rounded-xl shadow-sm p-6 hover:shadow-lg transition-shadow">
             <div class="flex items-start justify-between mb-4">
                 <div class="flex items-center space-x-3">
                     <div class="p-2 rounded-lg {% if node.status == 'online' %}bg-agri-100{% else %}bg-gray-100{% endif %}">
-                        {% if node.node_type == 'gateway' %}
+                        {% if node.node_type == 'GW' %}
                         <i data-lucide="router" class="w-6 h-6 {% if node.status == 'online' %}text-agri-600{% else %}text-gray-400{% endif %}"></i>
-                        {% elif node.node_type == 'ambient' %}
+                        {% elif node.node_type == 'AMB' %}
                         <i data-lucide="thermometer" class="w-6 h-6 {% if node.status == 'online' %}text-agri-600{% else %}text-gray-400{% endif %}"></i>
                         {% else %}
                         <i data-lucide="shield" class="w-6 h-6 {% if node.status == 'online' %}text-agri-600{% else %}text-gray-400{% endif %}"></i>
@@ -81,17 +111,19 @@
                     <div>
                         <h3 class="font-semibold text-gray-900">{{ node.name|default:node.node_id }}</h3>
                         <p class="text-sm text-gray-500">
-                            {% if node.node_type == 'gateway' %}Gateway
-                            {% elif node.node_type == 'ambient' %}Ambientale
-                            {% else %}Sicurezza{% endif %}
+                            {% if node.node_type == 'GW' %}Gateway
+                            {% elif node.node_type == 'AMB' %}Ambientale
+                            {% elif node.node_type == 'SEC' %}Sicurezza
+                            {% else %}{{ node.node_type }}{% endif %}
                         </p>
                     </div>
                 </div>
                 <div class="flex items-center space-x-2">
                     <span class="w-2.5 h-2.5 rounded-full 
                         {% if node.status == 'online' %}bg-green-500
-                        {% elif node.status == 'offline' %}bg-red-500
-                        {% else %}bg-yellow-500{% endif %}"></span>
+                        {% elif node.status == 'warning' %}bg-yellow-500
+                        {% else %}bg-red-500{% endif %}">
+                    </span>
                     <span class="text-sm text-gray-600 capitalize">{{ node.status }}</span>
                 </div>
             </div>
@@ -108,11 +140,7 @@
                     </span>
                 </div>
                 <div class="flex items-center space-x-2">
-                    <i data-lucide="signal" class="w-4 h-4 
-                        {% if node.rssi == None %}text-gray-400
-                        {% elif node.rssi > -60 %}text-green-500
-                        {% elif node.rssi > -75 %}text-yellow-500
-                        {% else %}text-red-500{% endif %}"></i>
+                    <i data-lucide="signal" class="w-4 h-4 text-gray-400"></i>
                     <span class="text-gray-600">
                         {% if node.rssi != None %}{{ node.rssi }} dBm{% else %}-{% endif %}
                     </span>
@@ -131,16 +159,11 @@
                     Ultimo contatto: 
                     {% if node.last_seen %}
                     {{ node.last_seen|date:"d/m/Y H:i" }}
-                    {% else %}Mai{% endif %}
+                    {% else %}
+                    Mai
+                    {% endif %}
                 </p>
             </div>
-            
-            {% if node.is_armed %}
-            <div class="mt-3 flex items-center text-sm text-agri-600">
-                <i data-lucide="shield" class="w-4 h-4 mr-1"></i>
-                Armato
-            </div>
-            {% endif %}
         </a>
         {% endfor %}
     </div>
@@ -148,6 +171,7 @@
     <div class="bg-white rounded-xl shadow-sm p-12 text-center">
         <i data-lucide="radio" class="w-12 h-12 text-gray-300 mx-auto mb-4"></i>
         <p class="text-gray-500">Nessun nodo trovato</p>
+        <p class="text-sm text-gray-400 mt-2">I nodi appariranno qui quando si connetteranno</p>
     </div>
     {% endif %}
 </div>

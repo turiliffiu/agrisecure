@@ -1,5 +1,4 @@
 {% extends 'base.html' %}
-{% load static %}
 
 {% block title %}{{ node.name|default:node.node_id }} - AgriSecure{% endblock %}
 
@@ -42,9 +41,9 @@
         <div class="bg-white rounded-xl shadow-sm p-6">
             <div class="flex items-center space-x-3">
                 <div class="p-2 rounded-lg bg-blue-100">
-                    {% if node.node_type == 'gateway' %}
+                    {% if node.node_type == 'GW' %}
                     <i data-lucide="router" class="w-5 h-5 text-blue-600"></i>
-                    {% elif node.node_type == 'ambient' %}
+                    {% elif node.node_type == 'AMB' %}
                     <i data-lucide="thermometer" class="w-5 h-5 text-blue-600"></i>
                     {% else %}
                     <i data-lucide="shield" class="w-5 h-5 text-blue-600"></i>
@@ -52,7 +51,12 @@
                 </div>
                 <div>
                     <p class="text-sm text-gray-500">Tipo</p>
-                    <p class="font-semibold text-gray-900 capitalize">{{ node.node_type }}</p>
+                    <p class="font-semibold text-gray-900">
+                        {% if node.node_type == 'GW' %}Gateway
+                        {% elif node.node_type == 'AMB' %}Ambientale
+                        {% elif node.node_type == 'SEC' %}Sicurezza
+                        {% else %}{{ node.node_type }}{% endif %}
+                    </p>
                 </div>
             </div>
         </div>
@@ -110,26 +114,35 @@
                         {% else %}-{% endif %}
                     </span>
                 </div>
-                {% if node.firmware_version %}
                 <div class="flex items-center text-sm">
+                    <i data-lucide="cpu" class="w-4 h-4 text-gray-400 mr-2"></i>
                     <span class="text-gray-500">Firmware:</span>
-                    <span class="ml-auto text-gray-900">{{ node.firmware_version }}</span>
+                    <span class="ml-auto text-gray-900">{{ node.firmware_version|default:"-" }}</span>
                 </div>
-                {% endif %}
-                {% if node.uptime %}
                 <div class="flex items-center text-sm">
+                    <i data-lucide="activity" class="w-4 h-4 text-gray-400 mr-2"></i>
                     <span class="text-gray-500">Uptime:</span>
                     <span class="ml-auto text-gray-900">
-                        {{ node.uptime|divisibleby:3600 }}h {{ node.uptime|divisibleby:60|mod:60 }}m
+                        {% if node.uptime_seconds %}
+                        {{ node.uptime_seconds|floatformat:0 }}s
+                        {% else %}-{% endif %}
                     </span>
                 </div>
-                {% endif %}
-                {% if node.is_armed != None %}
+                <div class="flex items-center text-sm">
+                    <i data-lucide="git-branch" class="w-4 h-4 text-gray-400 mr-2"></i>
+                    <span class="text-gray-500">Mesh neighbors:</span>
+                    <span class="ml-auto text-gray-900">{{ node.mesh_neighbors|default:"-" }}</span>
+                </div>
+                {% if node.node_type == 'SEC' %}
                 <div class="flex items-center text-sm">
                     <i data-lucide="shield" class="w-4 h-4 text-gray-400 mr-2"></i>
-                    <span class="text-gray-500">Armato:</span>
-                    <span class="ml-auto font-medium {% if node.is_armed %}text-green-600{% else %}text-gray-600{% endif %}">
-                        {% if node.is_armed %}Sì{% else %}No{% endif %}
+                    <span class="text-gray-500">Stato armamento:</span>
+                    <span class="ml-auto">
+                        {% if node.is_armed %}
+                        <span class="px-2 py-1 bg-green-100 text-green-700 rounded text-xs">Armato</span>
+                        {% else %}
+                        <span class="px-2 py-1 bg-yellow-100 text-yellow-700 rounded text-xs">Disarmato</span>
+                        {% endif %}
                     </span>
                 </div>
                 {% endif %}
@@ -138,16 +151,23 @@
         
         <!-- Grafico -->
         <div class="lg:col-span-2 bg-white rounded-xl shadow-sm p-6">
-            <h3 class="text-lg font-semibold text-gray-900 mb-4">
-                {% if node.node_type == 'ambient' %}Dati Sensori (24h){% else %}Attività (24h){% endif %}
-            </h3>
+            <h3 class="text-lg font-semibold text-gray-900 mb-4">Dati Sensori (24h)</h3>
+            {% if node.node_type == 'AMB' %}
             <div class="h-64">
                 <canvas id="nodeChart"></canvas>
             </div>
+            {% else %}
+            <div class="flex items-center justify-center h-64 text-gray-400">
+                <div class="text-center">
+                    <i data-lucide="bar-chart-2" class="w-12 h-12 mx-auto mb-2 opacity-50"></i>
+                    <p>Grafici disponibili solo per nodi Ambientali</p>
+                </div>
+            </div>
+            {% endif %}
         </div>
     </div>
     
-    <!-- Invio Comandi -->
+    <!-- Comandi -->
     <div class="bg-white rounded-xl shadow-sm p-6">
         <h3 class="text-lg font-semibold text-gray-900 mb-4">Invia Comando</h3>
         <form method="post" action="{% url 'frontend:node_command' node.id %}" class="flex flex-col sm:flex-row gap-4">
@@ -156,34 +176,32 @@
                 <option value="">Seleziona comando...</option>
                 <option value="reboot">Riavvia</option>
                 <option value="status">Richiedi stato</option>
-                <option value="config_refresh">Aggiorna configurazione</option>
-                {% if node.node_type == 'security' %}
+                {% if node.node_type == 'SEC' %}
                 <option value="arm">Arma</option>
                 <option value="disarm">Disarma</option>
-                <option value="test_siren">Test sirena</option>
                 {% endif %}
             </select>
-            <button type="submit" class="px-6 py-2 bg-agri-600 text-white rounded-lg hover:bg-agri-700 flex items-center justify-center">
+            <button type="submit" class="px-6 py-2 bg-agri-600 text-white rounded-lg hover:bg-agri-700 flex items-center">
                 <i data-lucide="send" class="w-4 h-4 mr-2"></i>
                 Invia
             </button>
         </form>
     </div>
     
-    <!-- Ultime letture sensori (solo per nodi ambient) -->
-    {% if node.node_type == 'ambient' and latest_readings %}
+    <!-- Ultime Letture (solo AMB) -->
+    {% if node.node_type == 'AMB' and latest_readings %}
     <div class="bg-white rounded-xl shadow-sm p-6">
         <h3 class="text-lg font-semibold text-gray-900 mb-4">Ultime Letture</h3>
         <div class="overflow-x-auto">
             <table class="min-w-full divide-y divide-gray-200">
                 <thead class="bg-gray-50">
                     <tr>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Data/Ora</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Temp</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Umidità</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Pressione</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Luce</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Suolo</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Data/Ora</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Temp</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Umidità</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Pressione</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Luce</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Suolo</th>
                     </tr>
                 </thead>
                 <tbody class="bg-white divide-y divide-gray-200">
@@ -202,10 +220,10 @@
                             {% if reading.pressure %}{{ reading.pressure|floatformat:0 }} hPa{% else %}-{% endif %}
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {% if reading.light %}{{ reading.light|floatformat:0 }} lux{% else %}-{% endif %}
+                            {% if reading.light_lux %}{{ reading.light_lux }} lux{% else %}-{% endif %}
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {% if reading.soil_moisture_percent %}{{ reading.soil_moisture_percent|floatformat:0 }}%{% else %}-{% endif %}
+                            {% if reading.soil_moisture_percent %}{{ reading.soil_moisture_percent }}%{% else %}-{% endif %}
                         </td>
                     </tr>
                     {% endfor %}
@@ -218,31 +236,34 @@
 {% endblock %}
 
 {% block extra_js %}
+{% if node.node_type == 'AMB' %}
 <script>
-    // Dati grafico
     const chartData = {{ chart_data|safe }};
     
-    const ctx = document.getElementById('nodeChart').getContext('2d');
-    new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: chartData.labels,
-            datasets: chartData.datasets
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    position: 'bottom'
-                }
+    if (chartData.labels && chartData.labels.length > 0) {
+        const ctx = document.getElementById('nodeChart').getContext('2d');
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: chartData.labels,
+                datasets: chartData.datasets || []
             },
-            scales: {
-                y: {
-                    beginAtZero: false
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom'
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: false
+                    }
                 }
             }
-        }
-    });
+        });
+    }
 </script>
+{% endif %}
 {% endblock %}
