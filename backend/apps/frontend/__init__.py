@@ -1,0 +1,1 @@
+# AgriSecure Frontend App

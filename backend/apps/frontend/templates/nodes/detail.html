@@ -1,0 +1,248 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}{{ node.name|default:node.node_id }} - AgriSecure{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Header -->
+    <div class="flex items-center space-x-4">
+        <a href="{% url 'frontend:nodes' %}" class="p-2 rounded-lg hover:bg-gray-100 transition-colors">
+            <i data-lucide="arrow-left" class="w-5 h-5 text-gray-600"></i>
+        </a>
+        <div class="flex-1">
+            <h1 class="text-2xl font-bold text-gray-900">{{ node.name|default:node.node_id }}</h1>
+            <p class="text-gray-500">ID: {{ node.node_id }}</p>
+        </div>
+        <button onclick="location.reload()" class="p-2 rounded-lg hover:bg-gray-100 transition-colors">
+            <i data-lucide="refresh-cw" class="w-5 h-5 text-gray-600"></i>
+        </button>
+    </div>
+    
+    <!-- Info Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <!-- Stato -->
+        <div class="bg-white rounded-xl shadow-sm p-6">
+            <div class="flex items-center space-x-3">
+                <div class="p-2 rounded-lg {% if node.status == 'online' %}bg-green-100{% else %}bg-red-100{% endif %}">
+                    {% if node.status == 'online' %}
+                    <i data-lucide="wifi" class="w-5 h-5 text-green-600"></i>
+                    {% else %}
+                    <i data-lucide="wifi-off" class="w-5 h-5 text-red-600"></i>
+                    {% endif %}
+                </div>
+                <div>
+                    <p class="text-sm text-gray-500">Stato</p>
+                    <p class="font-semibold text-gray-900 capitalize">{{ node.status }}</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Tipo -->
+        <div class="bg-white rounded-xl shadow-sm p-6">
+            <div class="flex items-center space-x-3">
+                <div class="p-2 rounded-lg bg-blue-100">
+                    {% if node.node_type == 'gateway' %}
+                    <i data-lucide="router" class="w-5 h-5 text-blue-600"></i>
+                    {% elif node.node_type == 'ambient' %}
+                    <i data-lucide="thermometer" class="w-5 h-5 text-blue-600"></i>
+                    {% else %}
+                    <i data-lucide="shield" class="w-5 h-5 text-blue-600"></i>
+                    {% endif %}
+                </div>
+                <div>
+                    <p class="text-sm text-gray-500">Tipo</p>
+                    <p class="font-semibold text-gray-900 capitalize">{{ node.node_type }}</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Batteria -->
+        <div class="bg-white rounded-xl shadow-sm p-6">
+            <div class="flex items-center space-x-3">
+                <div class="p-2 rounded-lg {% if node.battery_level and node.battery_level < 20 %}bg-red-100{% else %}bg-green-100{% endif %}">
+                    <i data-lucide="battery" class="w-5 h-5 {% if node.battery_level and node.battery_level < 20 %}text-red-600{% else %}text-green-600{% endif %}"></i>
+                </div>
+                <div>
+                    <p class="text-sm text-gray-500">Batteria</p>
+                    <p class="font-semibold text-gray-900">
+                        {% if node.battery_level != None %}{{ node.battery_level }}%{% else %}-{% endif %}
+                    </p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Segnale -->
+        <div class="bg-white rounded-xl shadow-sm p-6">
+            <div class="flex items-center space-x-3">
+                <div class="p-2 rounded-lg bg-purple-100">
+                    <i data-lucide="signal" class="w-5 h-5 text-purple-600"></i>
+                </div>
+                <div>
+                    <p class="text-sm text-gray-500">Segnale</p>
+                    <p class="font-semibold text-gray-900">
+                        {% if node.rssi != None %}{{ node.rssi }} dBm{% else %}-{% endif %}
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Dettagli e Grafico -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Dettagli -->
+        <div class="bg-white rounded-xl shadow-sm p-6">
+            <h3 class="text-lg font-semibold text-gray-900 mb-4">Dettagli</h3>
+            <div class="space-y-4">
+                <div class="flex items-center text-sm">
+                    <i data-lucide="clock" class="w-4 h-4 text-gray-400 mr-2"></i>
+                    <span class="text-gray-500">Ultimo contatto:</span>
+                    <span class="ml-auto text-gray-900">
+                        {% if node.last_seen %}{{ node.last_seen|date:"d/m/Y H:i:s" }}{% else %}Mai{% endif %}
+                    </span>
+                </div>
+                <div class="flex items-center text-sm">
+                    <i data-lucide="map-pin" class="w-4 h-4 text-gray-400 mr-2"></i>
+                    <span class="text-gray-500">Posizione:</span>
+                    <span class="ml-auto text-gray-900">
+                        {% if node.latitude and node.longitude %}
+                        {{ node.latitude|floatformat:4 }}, {{ node.longitude|floatformat:4 }}
+                        {% else %}-{% endif %}
+                    </span>
+                </div>
+                {% if node.firmware_version %}
+                <div class="flex items-center text-sm">
+                    <span class="text-gray-500">Firmware:</span>
+                    <span class="ml-auto text-gray-900">{{ node.firmware_version }}</span>
+                </div>
+                {% endif %}
+                {% if node.uptime %}
+                <div class="flex items-center text-sm">
+                    <span class="text-gray-500">Uptime:</span>
+                    <span class="ml-auto text-gray-900">
+                        {{ node.uptime|divisibleby:3600 }}h {{ node.uptime|divisibleby:60|mod:60 }}m
+                    </span>
+                </div>
+                {% endif %}
+                {% if node.is_armed != None %}
+                <div class="flex items-center text-sm">
+                    <i data-lucide="shield" class="w-4 h-4 text-gray-400 mr-2"></i>
+                    <span class="text-gray-500">Armato:</span>
+                    <span class="ml-auto font-medium {% if node.is_armed %}text-green-600{% else %}text-gray-600{% endif %}">
+                        {% if node.is_armed %}Sì{% else %}No{% endif %}
+                    </span>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        
+        <!-- Grafico -->
+        <div class="lg:col-span-2 bg-white rounded-xl shadow-sm p-6">
+            <h3 class="text-lg font-semibold text-gray-900 mb-4">
+                {% if node.node_type == 'ambient' %}Dati Sensori (24h){% else %}Attività (24h){% endif %}
+            </h3>
+            <div class="h-64">
+                <canvas id="nodeChart"></canvas>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Invio Comandi -->
+    <div class="bg-white rounded-xl shadow-sm p-6">
+        <h3 class="text-lg font-semibold text-gray-900 mb-4">Invia Comando</h3>
+        <form method="post" action="{% url 'frontend:node_command' node.id %}" class="flex flex-col sm:flex-row gap-4">
+            {% csrf_token %}
+            <select name="command" class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-agri-500">
+                <option value="">Seleziona comando...</option>
+                <option value="reboot">Riavvia</option>
+                <option value="status">Richiedi stato</option>
+                <option value="config_refresh">Aggiorna configurazione</option>
+                {% if node.node_type == 'security' %}
+                <option value="arm">Arma</option>
+                <option value="disarm">Disarma</option>
+                <option value="test_siren">Test sirena</option>
+                {% endif %}
+            </select>
+            <button type="submit" class="px-6 py-2 bg-agri-600 text-white rounded-lg hover:bg-agri-700 flex items-center justify-center">
+                <i data-lucide="send" class="w-4 h-4 mr-2"></i>
+                Invia
+            </button>
+        </form>
+    </div>
+    
+    <!-- Ultime letture sensori (solo per nodi ambient) -->
+    {% if node.node_type == 'ambient' and latest_readings %}
+    <div class="bg-white rounded-xl shadow-sm p-6">
+        <h3 class="text-lg font-semibold text-gray-900 mb-4">Ultime Letture</h3>
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Data/Ora</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Temp</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Umidità</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Pressione</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Luce</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Suolo</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                    {% for reading in latest_readings %}
+                    <tr>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            {{ reading.timestamp|date:"d/m/Y H:i" }}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {% if reading.temperature %}{{ reading.temperature|floatformat:1 }}°C{% else %}-{% endif %}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {% if reading.humidity %}{{ reading.humidity|floatformat:0 }}%{% else %}-{% endif %}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {% if reading.pressure %}{{ reading.pressure|floatformat:0 }} hPa{% else %}-{% endif %}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {% if reading.light %}{{ reading.light|floatformat:0 }} lux{% else %}-{% endif %}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {% if reading.soil_moisture %}{{ reading.soil_moisture|floatformat:0 }}%{% else %}-{% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Dati grafico
+    const chartData = {{ chart_data|safe }};
+    
+    const ctx = document.getElementById('nodeChart').getContext('2d');
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: chartData.labels,
+            datasets: chartData.datasets
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: false
+                }
+            }
+        }
+    });
+</script>
+{% endblock %}

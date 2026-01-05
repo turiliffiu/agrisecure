@@ -1,0 +1,234 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Sensori - AgriSecure{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Header -->
+    <div class="flex items-center justify-between">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-900">Sensori</h1>
+            <p class="text-gray-500">Monitoraggio ambientale in tempo reale</p>
+        </div>
+        <button onclick="location.reload()" class="flex items-center px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50">
+            <i data-lucide="refresh-cw" class="w-4 h-4 mr-2"></i>
+            Aggiorna
+        </button>
+    </div>
+    
+    <!-- Sensor Cards -->
+    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+        <!-- Temperatura -->
+        <div class="bg-white rounded-xl shadow-sm p-6">
+            <div class="flex items-center justify-between mb-4">
+                <div class="p-2 rounded-lg bg-red-100 text-red-600">
+                    <i data-lucide="thermometer" class="w-5 h-5"></i>
+                </div>
+            </div>
+            <p class="text-sm text-gray-500">Temperatura</p>
+            <p class="text-3xl font-bold text-gray-900">
+                {% if latest.temperature %}{{ latest.temperature|floatformat:1 }}{% else %}-{% endif %}
+                <span class="text-lg font-normal text-gray-500">°C</span>
+            </p>
+        </div>
+        
+        <!-- Umidità -->
+        <div class="bg-white rounded-xl shadow-sm p-6">
+            <div class="flex items-center justify-between mb-4">
+                <div class="p-2 rounded-lg bg-blue-100 text-blue-600">
+                    <i data-lucide="droplets" class="w-5 h-5"></i>
+                </div>
+            </div>
+            <p class="text-sm text-gray-500">Umidità Aria</p>
+            <p class="text-3xl font-bold text-gray-900">
+                {% if latest.humidity %}{{ latest.humidity|floatformat:0 }}{% else %}-{% endif %}
+                <span class="text-lg font-normal text-gray-500">%</span>
+            </p>
+        </div>
+        
+        <!-- Pressione -->
+        <div class="bg-white rounded-xl shadow-sm p-6">
+            <div class="flex items-center justify-between mb-4">
+                <div class="p-2 rounded-lg bg-purple-100 text-purple-600">
+                    <i data-lucide="gauge" class="w-5 h-5"></i>
+                </div>
+            </div>
+            <p class="text-sm text-gray-500">Pressione</p>
+            <p class="text-3xl font-bold text-gray-900">
+                {% if latest.pressure %}{{ latest.pressure|floatformat:0 }}{% else %}-{% endif %}
+                <span class="text-lg font-normal text-gray-500">hPa</span>
+            </p>
+        </div>
+        
+        <!-- Luminosità -->
+        <div class="bg-white rounded-xl shadow-sm p-6">
+            <div class="flex items-center justify-between mb-4">
+                <div class="p-2 rounded-lg bg-amber-100 text-amber-600">
+                    <i data-lucide="sun" class="w-5 h-5"></i>
+                </div>
+            </div>
+            <p class="text-sm text-gray-500">Luminosità</p>
+            <p class="text-3xl font-bold text-gray-900">
+                {% if latest.light %}{{ latest.light|floatformat:0 }}{% else %}-{% endif %}
+                <span class="text-lg font-normal text-gray-500">lux</span>
+            </p>
+        </div>
+        
+        <!-- Umidità Suolo -->
+        <div class="bg-white rounded-xl shadow-sm p-6">
+            <div class="flex items-center justify-between mb-4">
+                <div class="p-2 rounded-lg bg-green-100 text-green-600">
+                    <i data-lucide="flower-2" class="w-5 h-5"></i>
+                </div>
+            </div>
+            <p class="text-sm text-gray-500">Umidità Suolo</p>
+            <p class="text-3xl font-bold text-gray-900">
+                {% if latest.soil_moisture %}{{ latest.soil_moisture|floatformat:0 }}{% else %}-{% endif %}
+                <span class="text-lg font-normal text-gray-500">%</span>
+            </p>
+        </div>
+    </div>
+    
+    <!-- Filters -->
+    <div class="bg-white rounded-xl shadow-sm p-4">
+        <form method="get" class="flex flex-wrap gap-4">
+            <select name="node" class="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-agri-500">
+                <option value="">Tutti i nodi</option>
+                {% for node in ambient_nodes %}
+                <option value="{{ node.node_id }}" {% if request.GET.node == node.node_id %}selected{% endif %}>
+                    {{ node.name|default:node.node_id }}
+                </option>
+                {% endfor %}
+            </select>
+            <select name="hours" class="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-agri-500">
+                <option value="6" {% if request.GET.hours == '6' %}selected{% endif %}>Ultime 6 ore</option>
+                <option value="12" {% if request.GET.hours == '12' %}selected{% endif %}>Ultime 12 ore</option>
+                <option value="24" {% if request.GET.hours == '24' or not request.GET.hours %}selected{% endif %}>Ultime 24 ore</option>
+                <option value="48" {% if request.GET.hours == '48' %}selected{% endif %}>Ultime 48 ore</option>
+                <option value="168" {% if request.GET.hours == '168' %}selected{% endif %}>Ultima settimana</option>
+            </select>
+            <button type="submit" class="px-4 py-2 bg-agri-600 text-white rounded-lg hover:bg-agri-700">
+                Applica
+            </button>
+        </form>
+    </div>
+    
+    <!-- Chart -->
+    <div class="bg-white rounded-xl shadow-sm p-6">
+        <h3 class="text-lg font-semibold text-gray-900 mb-4">Andamento Temporale</h3>
+        <div class="h-80">
+            <canvas id="sensorChart"></canvas>
+        </div>
+    </div>
+    
+    <!-- Alerts -->
+    <div class="bg-white rounded-xl shadow-sm p-6">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-semibold text-gray-900">Alert Attivi</h3>
+            <span class="px-3 py-1 bg-gray-100 rounded-full text-sm text-gray-600">
+                {{ alerts|length }} alert
+            </span>
+        </div>
+        
+        {% if alerts %}
+        <div class="space-y-3">
+            {% for alert in alerts %}
+            <div class="border-l-4 p-4 rounded-r-lg 
+                {% if alert.severity == 'critical' %}border-l-red-500 bg-red-50
+                {% elif alert.severity == 'warning' %}border-l-yellow-500 bg-yellow-50
+                {% else %}border-l-blue-500 bg-blue-50{% endif %}">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <p class="font-medium text-gray-900">{{ alert.alert_type }}</p>
+                        <p class="text-sm text-gray-600">{{ alert.message }}</p>
+                        <p class="text-xs text-gray-500 mt-1">{{ alert.created_at|date:"d/m/Y H:i" }}</p>
+                    </div>
+                    <div class="flex space-x-2">
+                        {% if not alert.is_acknowledged %}
+                        <form method="post" action="{% url 'frontend:sensor_alert_ack' alert.id %}">
+                            {% csrf_token %}
+                            <button type="submit" class="text-sm px-3 py-1 bg-yellow-100 text-yellow-700 rounded hover:bg-yellow-200">
+                                ACK
+                            </button>
+                        </form>
+                        {% endif %}
+                        {% if not alert.is_resolved %}
+                        <form method="post" action="{% url 'frontend:sensor_alert_resolve' alert.id %}">
+                            {% csrf_token %}
+                            <button type="submit" class="text-sm px-3 py-1 bg-green-100 text-green-700 rounded hover:bg-green-200">
+                                Risolvi
+                            </button>
+                        </form>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="flex flex-col items-center justify-center py-8 text-gray-500">
+            <i data-lucide="check-circle" class="w-12 h-12 text-green-500 mb-2"></i>
+            <p>Nessun alert attivo</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    const chartData = {{ chart_data|safe }};
+    
+    const ctx = document.getElementById('sensorChart').getContext('2d');
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: chartData.labels,
+            datasets: [
+                {
+                    label: 'Temperatura (°C)',
+                    data: chartData.temperature,
+                    borderColor: '#ef4444',
+                    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                    tension: 0.3,
+                    fill: false
+                },
+                {
+                    label: 'Umidità (%)',
+                    data: chartData.humidity,
+                    borderColor: '#3b82f6',
+                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                    tension: 0.3,
+                    fill: false
+                },
+                {
+                    label: 'Suolo (%)',
+                    data: chartData.soil,
+                    borderColor: '#22c55e',
+                    backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                    tension: 0.3,
+                    fill: false
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: false
+                }
+            }
+        }
+    });
+    
+    // Auto-refresh ogni 60 secondi
+    setTimeout(() => location.reload(), 60000);
+</script>
+{% endblock %}
