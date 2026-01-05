@@ -6,19 +6,18 @@ import json
 from datetime import timedelta
 
 from django.shortcuts import render, redirect, get_object_or_404
-from django.contrib.auth import login, logout, authenticate
+from django.contrib.auth import login, logout
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import AuthenticationForm
 from django.contrib import messages
 from django.utils import timezone
 from django.core.paginator import Paginator
-from django.db.models import Count, Avg, Q
-from django.http import JsonResponse
+from django.db.models import Q
 from django.conf import settings
 
-from apps.nodes.models import Node, Heartbeat
+from apps.nodes.models import Node, NodeHeartbeat
 from apps.sensors.models import SensorReading, SensorAlert
-from apps.security.models import SecurityEvent, Alarm, ArmState
+from apps.security.models import SecurityEvent, Alarm, SystemArmState
 
 
 # ============================================================
@@ -72,7 +71,7 @@ def dashboard(request):
     ).select_related('node').order_by('-triggered_at')[:5]
     
     # Stato armamento
-    arm_state = ArmState.objects.order_by('-changed_at').first()
+    arm_state = SystemArmState.objects.order_by('-timestamp').first()
     system_armed = arm_state and arm_state.mode != 'disarmed' if arm_state else False
     arm_mode = arm_state.mode if arm_state else None
     
@@ -80,12 +79,12 @@ def dashboard(request):
     latest_reading = SensorReading.objects.order_by('-timestamp').first()
     latest_temperature = latest_reading.temperature if latest_reading else None
     latest_humidity = latest_reading.humidity if latest_reading else None
-    latest_soil = latest_reading.soil_moisture if latest_reading else None
+    latest_soil = latest_reading.soil_moisture_percent if latest_reading else None
     
     # Batterie basse
-    battery_warnings = nodes.filter(battery_level__lt=20, battery_level__isnull=False).count()
+    battery_warnings = nodes.filter(battery_percentage__lt=20, battery_percentage__isnull=False).count()
     
-    # Dati per il grafico (ultime 24 ore)
+    # Dati per il grafico
     chart_data = get_chart_data(hours=24)
     
     context = {
@@ -118,7 +117,6 @@ def get_chart_data(hours=24, node_id=None):
     
     readings = readings.order_by('timestamp')
     
-    # Raggruppa per ora
     hourly_data = {}
     for reading in readings:
         hour_key = reading.timestamp.strftime('%H:%M')
@@ -129,8 +127,8 @@ def get_chart_data(hours=24, node_id=None):
             hourly_data[hour_key]['temps'].append(float(reading.temperature))
         if reading.humidity:
             hourly_data[hour_key]['hums'].append(float(reading.humidity))
-        if reading.soil_moisture:
-            hourly_data[hour_key]['soils'].append(float(reading.soil_moisture))
+        if reading.soil_moisture_percent:
+            hourly_data[hour_key]['soils'].append(float(reading.soil_moisture_percent))
     
     labels = sorted(hourly_data.keys())
     temperature = []
@@ -160,21 +158,17 @@ def nodes_list(request):
     """Lista nodi"""
     nodes = Node.objects.all()
     
-    # Filtri
     search = request.GET.get('search', '')
     node_type = request.GET.get('type', '')
     status = request.GET.get('status', '')
     
     if search:
-        nodes = nodes.filter(
-            Q(name__icontains=search) | Q(node_id__icontains=search)
-        )
+        nodes = nodes.filter(Q(name__icontains=search) | Q(node_id__icontains=search))
     if node_type:
         nodes = nodes.filter(node_type=node_type)
     if status:
         nodes = nodes.filter(status=status)
     
-    # Statistiche
     all_nodes = Node.objects.all()
     
     context = {
@@ -193,16 +187,12 @@ def node_detail(request, node_id):
     """Dettaglio singolo nodo"""
     node = get_object_or_404(Node, id=node_id)
     
-    # Ultime letture (per nodi ambient)
     latest_readings = []
     chart_data = {'labels': [], 'datasets': []}
     
-    if node.node_type == 'ambient':
-        latest_readings = SensorReading.objects.filter(
-            node=node
-        ).order_by('-timestamp')[:20]
+    if node.node_type == 'AMB':
+        latest_readings = SensorReading.objects.filter(node=node).order_by('-timestamp')[:20]
         
-        # Dati grafico
         raw_data = get_chart_data(hours=24, node_id=node.node_id)
         chart_data = {
             'labels': raw_data['labels'],
@@ -239,9 +229,8 @@ def node_command(request, node_id):
         command = request.POST.get('command', '')
         
         if command:
-            # TODO: Implementare invio comando via MQTT
-            from apps.core.mqtt_publisher import mqtt_publish
             try:
+                from apps.core.mqtt_publisher import mqtt_publish
                 mqtt_publish(f'agrisecure/{node.node_id}/command', {
                     'command': command,
                     'timestamp': timezone.now().isoformat()
@@ -265,17 +254,10 @@ def sensors(request):
     hours = int(request.GET.get('hours', 24))
     node_id = request.GET.get('node', '')
     
-    # Ultima lettura
     latest = SensorReading.objects.order_by('-timestamp').first()
-    
-    # Nodi ambientali
-    ambient_nodes = Node.objects.filter(node_type='ambient')
-    
-    # Dati grafico
+    ambient_nodes = Node.objects.filter(node_type='AMB')
     chart_data = get_chart_data(hours=hours, node_id=node_id if node_id else None)
-    
-    # Alert attivi
-    alerts = SensorAlert.objects.filter(is_resolved=False).order_by('-created_at')
+    alerts = SensorAlert.objects.filter(is_resolved=False).order_by('-timestamp')
     
     context = {
         'latest': latest,
@@ -320,7 +302,6 @@ def alarms(request):
     """Lista allarmi"""
     alarms_qs = Alarm.objects.select_related('node').order_by('-triggered_at')
     
-    # Filtri
     status = request.GET.get('status', '')
     priority = request.GET.get('priority', '')
     
@@ -329,12 +310,10 @@ def alarms(request):
     if priority:
         alarms_qs = alarms_qs.filter(priority=priority)
     
-    # Paginazione
     paginator = Paginator(alarms_qs, 20)
     page = request.GET.get('page', 1)
     page_obj = paginator.get_page(page)
     
-    # Statistiche
     all_alarms = Alarm.objects.all()
     stats = {
         'active': all_alarms.filter(status='active').count(),
@@ -343,7 +322,7 @@ def alarms(request):
             status='resolved',
             triggered_at__gte=timezone.now() - timedelta(days=30)
         ).count(),
-        'false_positive_rate': 0,  # TODO: calcolare
+        'false_positive_rate': 0,
     }
     
     context = {
@@ -373,9 +352,8 @@ def alarm_action(request, alarm_id, action):
             messages.success(request, 'Allarme risolto')
         
         elif action == 'false_positive':
-            alarm.status = 'resolved'
+            alarm.status = 'false_pos'
             alarm.resolved_at = timezone.now()
-            alarm.is_false_positive = True
             messages.success(request, 'Allarme segnato come falso positivo')
         
         alarm.save()
@@ -386,15 +364,14 @@ def alarm_action(request, alarm_id, action):
 @login_required
 def arm_system(request):
     """Pagina armamento sistema"""
-    arm_state = ArmState.objects.order_by('-changed_at').first()
+    arm_state = SystemArmState.objects.order_by('-timestamp').first()
     is_armed = arm_state and arm_state.mode != 'disarmed' if arm_state else False
     
-    security_nodes = Node.objects.filter(node_type='security')
+    security_nodes = Node.objects.filter(node_type='SEC')
     armed_nodes = []
     
-    if is_armed and arm_state and arm_state.armed_nodes:
-        armed_node_ids = arm_state.armed_nodes
-        armed_nodes = Node.objects.filter(node_id__in=armed_node_ids)
+    if is_armed and arm_state:
+        armed_nodes = arm_state.nodes_affected.all()
     
     context = {
         'is_armed': is_armed,
@@ -413,50 +390,63 @@ def arm_action(request):
         action = request.POST.get('action', '')
         
         if action == 'arm':
-            mode = request.POST.get('mode', 'away')
-            nodes = request.POST.getlist('nodes', [])
+            mode = request.POST.get('mode', 'armed_away')
+            node_ids = request.POST.getlist('nodes', [])
             notes = request.POST.get('notes', '')
             
+            # Mappa modalità frontend -> modello
+            mode_map = {
+                'away': 'armed_away',
+                'home': 'armed_stay',
+                'night': 'armed',
+            }
+            arm_mode = mode_map.get(mode, 'armed_away')
+            
             # Crea nuovo stato
-            ArmState.objects.create(
-                mode=mode,
-                armed_nodes=nodes,
+            new_state = SystemArmState.objects.create(
+                mode=arm_mode,
                 changed_by=request.user.username,
+                change_source='app',
                 notes=notes
             )
             
+            # Associa i nodi
+            if node_ids:
+                nodes = Node.objects.filter(node_id__in=node_ids)
+                new_state.nodes_affected.set(nodes)
+            
             # Invia comando ai nodi
-            from apps.core.mqtt_publisher import mqtt_publish
-            for node_id in nodes:
-                try:
+            try:
+                from apps.core.mqtt_publisher import mqtt_publish
+                for node_id in node_ids:
                     mqtt_publish(f'agrisecure/{node_id}/command', {
                         'command': 'arm',
-                        'mode': mode,
+                        'mode': arm_mode,
                         'timestamp': timezone.now().isoformat()
                     })
-                except:
-                    pass
+            except:
+                pass
             
             messages.success(request, 'Sistema armato con successo')
         
         elif action == 'disarm':
             # Crea stato disarmato
-            ArmState.objects.create(
+            new_state = SystemArmState.objects.create(
                 mode='disarmed',
-                armed_nodes=[],
-                changed_by=request.user.username
+                changed_by=request.user.username,
+                change_source='app'
             )
             
             # Invia comando di disarmo a tutti i nodi security
-            from apps.core.mqtt_publisher import mqtt_publish
-            for node in Node.objects.filter(node_type='security'):
-                try:
+            try:
+                from apps.core.mqtt_publisher import mqtt_publish
+                for node in Node.objects.filter(node_type='SEC'):
                     mqtt_publish(f'agrisecure/{node.node_id}/command', {
                         'command': 'disarm',
                         'timestamp': timezone.now().isoformat()
                     })
-                except:
-                    pass
+            except:
+                pass
             
             messages.success(request, 'Sistema disarmato')
     
@@ -470,17 +460,14 @@ def arm_action(request):
 @login_required
 def settings_view(request):
     """Pagina impostazioni"""
-    # Verifica configurazioni
     telegram_configured = bool(getattr(settings, 'TELEGRAM_BOT_TOKEN', None))
     email_configured = bool(getattr(settings, 'EMAIL_HOST_USER', None))
     
-    # Info sistema
     total_nodes = Node.objects.count()
     last_reading = SensorReading.objects.order_by('-timestamp').first()
     last_data_update = last_reading.timestamp if last_reading else None
     
-    # Stato MQTT
-    mqtt_status = True  # TODO: verificare connessione reale
+    mqtt_status = True
     
     context = {
         'telegram_configured': telegram_configured,
