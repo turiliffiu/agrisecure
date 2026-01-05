@@ -84,7 +84,7 @@
             </div>
             <p class="text-sm text-gray-500">Umidità Suolo</p>
             <p class="text-3xl font-bold text-gray-900">
-                {% if latest.soil_moisture %}{{ latest.soil_moisture|floatformat:0 }}{% else %}-{% endif %}
+                {% if latest.soil_moisture_percent %}{{ latest.soil_moisture_percent|floatformat:0 }}{% else %}-{% endif %}
                 <span class="text-lg font-normal text-gray-500">%</span>
             </p>
         </div>
