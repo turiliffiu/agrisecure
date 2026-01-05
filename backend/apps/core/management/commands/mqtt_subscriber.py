@@ -40,8 +40,7 @@ class MQTTSubscriber:
     def connect(self):
         """Stabilisce connessione al broker MQTT"""
         self.client = mqtt.Client(
-            client_id=f"agrisecure-backend-{timezone.now().timestamp()}",
-            protocol=mqtt.MQTTv5
+            client_id=f"agrisecure-backend-{timezone.now().timestamp()}"
         )
         
         # Callbacks
@@ -69,25 +68,21 @@ class MQTTSubscriber:
             logger.error(f"Errore connessione MQTT: {e}")
             return False
     
-    def _on_connect(self, client, userdata, flags, rc, properties=None):
+    def _on_connect(self, client, userdata, flags, rc):
         """Callback connessione stabilita"""
         if rc == 0:
             self.connected = True
             logger.info("Connesso al broker MQTT")
             
-            # Subscribe ai topic
-            topics = [
-                (self.config['TOPICS']['SENSORS'], self.config['QOS']),
-                (self.config['TOPICS']['SECURITY'], self.config['QOS']),
-                (self.config['TOPICS']['STATUS'], self.config['QOS']),
-            ]
-            for topic, qos in topics:
-                client.subscribe(topic, qos)
-                logger.info(f"Sottoscritto a: {topic}")
+            # Subscribe a tutti i topic agrisecure con wildcard ampio
+            # Questo cattura: sensors, security, status e qualsiasi altro
+            main_topic = "agrisecure/#"
+            client.subscribe(main_topic, self.config['QOS'])
+            logger.info(f"Sottoscritto a: {main_topic}")
         else:
             logger.error(f"Connessione MQTT fallita, codice: {rc}")
     
-    def _on_disconnect(self, client, userdata, rc, properties=None):
+    def _on_disconnect(self, client, userdata, rc):
         """Callback disconnessione"""
         self.connected = False
         if rc != 0:
@@ -101,7 +96,7 @@ class MQTTSubscriber:
             topic = msg.topic
             payload = json.loads(msg.payload.decode('utf-8'))
             
-            logger.debug(f"Messaggio ricevuto su {topic}")
+            logger.info(f"Messaggio ricevuto su {topic}: {list(payload.keys())}")
             
             # Routing basato su topic
             if '/sensors/' in topic:
@@ -170,10 +165,10 @@ class MQTTSubscriber:
             logger.warning("Evento sicurezza senza node_id")
             return
         
-        classification = payload.get('classification', 'unknown')
-        priority = payload.get('priority', 'MEDIUM')
+        classification_raw = payload.get('classification', 'unknown')
+        priority_raw = payload.get('priority', 'MEDIUM')
         
-        logger.info(f"Evento sicurezza da {node_id}: {classification} (priorità: {priority})")
+        logger.info(f"Evento sicurezza da {node_id}: {classification_raw} (priorità: {priority_raw})")
         
         # Trova o crea nodo
         node, created = Node.objects.get_or_create(
@@ -189,19 +184,31 @@ class MQTTSubscriber:
         node.status = NodeStatus.ONLINE
         node.save(update_fields=['last_seen', 'status', 'updated_at'])
         
-        # Mappa classificazione
+        # Mappa classificazione - supporta sia valori numerici che stringhe
         class_map = {
+            # Valori numerici
             0: IntrusionClass.NONE,
             1: IntrusionClass.PERSON,
-            'PERSON': IntrusionClass.PERSON,
             2: IntrusionClass.ANIMAL_LARGE,
-            'ANIMAL_LARGE': IntrusionClass.ANIMAL_LARGE,
             3: IntrusionClass.ANIMAL_SMALL,
-            'ANIMAL_SMALL': IntrusionClass.ANIMAL_SMALL,
             4: IntrusionClass.UNKNOWN,
+            5: IntrusionClass.TAMPER,
+            # Stringhe maiuscole
+            'NONE': IntrusionClass.NONE,
+            'PERSON': IntrusionClass.PERSON,
+            'ANIMAL_LARGE': IntrusionClass.ANIMAL_LARGE,
+            'ANIMAL_SMALL': IntrusionClass.ANIMAL_SMALL,
             'UNKNOWN': IntrusionClass.UNKNOWN,
+            'TAMPER': IntrusionClass.TAMPER,
+            # Stringhe minuscole (come invia il simulatore)
+            'none': IntrusionClass.NONE,
+            'person': IntrusionClass.PERSON,
+            'animal_lg': IntrusionClass.ANIMAL_LARGE,
+            'animal_sm': IntrusionClass.ANIMAL_SMALL,
+            'unknown': IntrusionClass.UNKNOWN,
+            'tamper': IntrusionClass.TAMPER,
         }
-        intrusion_class = class_map.get(classification, IntrusionClass.UNKNOWN)
+        intrusion_class = class_map.get(classification_raw, IntrusionClass.UNKNOWN)
         
         # Mappa priorità
         priority_map = {
@@ -210,8 +217,12 @@ class MQTTSubscriber:
             'MEDIUM': AlarmPriority.MEDIUM,
             'LOW': AlarmPriority.LOW,
             'WARNING': AlarmPriority.HIGH,
+            'critical': AlarmPriority.CRITICAL,
+            'high': AlarmPriority.HIGH,
+            'medium': AlarmPriority.MEDIUM,
+            'low': AlarmPriority.LOW,
         }
-        alarm_priority = priority_map.get(priority.upper(), AlarmPriority.MEDIUM)
+        alarm_priority = priority_map.get(priority_raw, AlarmPriority.MEDIUM)
         
         # Crea evento sicurezza
         event = SecurityEvent.objects.create(
@@ -229,6 +240,8 @@ class MQTTSubscriber:
             raw_data=payload,
         )
         
+        logger.info(f"Evento sicurezza salvato: {event.id} - {intrusion_class}")
+        
         # Se persona o tamper, crea allarme
         if intrusion_class in [IntrusionClass.PERSON, IntrusionClass.TAMPER]:
             alarm = Alarm.objects.create(
@@ -241,7 +254,7 @@ class MQTTSubscriber:
                 lights_activated=True,
             )
             
-            logger.warning(f"!!! ALLARME CRITICO !!! {intrusion_class} su {node_id}")
+            logger.warning(f"!!! ALLARME CRITICO {alarm.id} !!! {intrusion_class} su {node_id}")
             
             # Trigger notifiche
             self._send_alarm_notifications(alarm)
@@ -267,21 +280,28 @@ class MQTTSubscriber:
         
         logger.debug(f"Status da {node_id}")
         
+        # Mappa tipo nodo
+        node_type_map = {
+            'GATEWAY': NodeType.GATEWAY,
+            'AMBIENT': NodeType.AMBIENT,
+            'SECURITY': NodeType.SECURITY,
+            'GW': NodeType.GATEWAY,
+            'AMB': NodeType.AMBIENT,
+            'SEC': NodeType.SECURITY,
+        }
+        
         # Trova nodo
         try:
             node = Node.objects.get(node_id=node_id)
         except Node.DoesNotExist:
             # Crea nodo se non esiste
-            node_type_map = {
-                'GATEWAY': NodeType.GATEWAY,
-                'AMBIENT': NodeType.AMBIENT,
-                'SECURITY': NodeType.SECURITY,
-            }
+            raw_type = payload.get('type', 'AMB')
             node = Node.objects.create(
                 node_id=node_id,
                 name=f'Nodo {node_id}',
-                node_type=node_type_map.get(payload.get('type'), NodeType.AMBIENT),
+                node_type=node_type_map.get(raw_type, NodeType.AMBIENT),
             )
+            logger.info(f"Nuovo nodo creato da heartbeat: {node_id} ({raw_type})")
         
         # Aggiorna dati nodo
         node.last_seen = timezone.now()
@@ -296,6 +316,8 @@ class MQTTSubscriber:
         
         node.save()
         
+        logger.debug(f"Nodo {node_id} aggiornato: status=online, battery={node.battery_percentage}")
+        
         # Crea record heartbeat
         NodeHeartbeat.objects.create(
             node=node,
@@ -308,8 +330,7 @@ class MQTTSubscriber:
     
     def _check_sensor_alerts(self, node, reading):
         """Verifica soglie sensori e genera alert"""
-        from django.conf import settings
-        thresholds = settings.AGRISECURE.get('ALARM_THRESHOLDS', {})
+        thresholds = getattr(settings, 'AGRISECURE', {}).get('ALARM_THRESHOLDS', {})
         
         alerts_to_create = []
         
@@ -356,9 +377,10 @@ class MQTTSubscriber:
     def _send_alarm_notifications(self, alarm):
         """Invia notifiche per allarme critico"""
         # Questo sarà gestito da Celery task
-        from apps.notifications.tasks import send_alarm_notification
         try:
+            from apps.notifications.tasks import send_alarm_notification
             send_alarm_notification.delay(alarm.id)
+            logger.info(f"Notifica schedulata per allarme {alarm.id}")
         except Exception as e:
             logger.error(f"Errore invio notifica allarme: {e}")
     
