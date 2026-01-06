@@ -10,7 +10,7 @@ Usage:
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone as dt_timezone
 from decimal import Decimal
 
 from django.core.management.base import BaseCommand
@@ -392,7 +392,7 @@ class MQTTSubscriber:
             # Unix timestamp (secondi o millisecondi)
             if ts > 1e12:  # Millisecondi
                 ts = ts / 1000
-            return datetime.fromtimestamp(ts, tz=timezone.utc)
+            return datetime.fromtimestamp(ts, tz=dt_timezone.utc)
         return timezone.now()
     
     def _to_decimal(self, value):
