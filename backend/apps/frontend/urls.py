@@ -35,4 +35,5 @@ urlpatterns = [
     path('settings/', views.settings_view, name='settings'),
     path('settings/restart/', views.restart_services, name='restart_services'),
     path('settings/cleanup/', views.cleanup_data, name='cleanup_data'),
+    path("alarms/bulk-action/", views.bulk_alarm_action, name="bulk_alarm_action"),
 ]

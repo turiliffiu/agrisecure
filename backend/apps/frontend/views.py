@@ -6,6 +6,9 @@ import json
 from datetime import timedelta
 
 from django.shortcuts import render, redirect, get_object_or_404
+from django.db import transaction
+from django.views.decorators.http import require_POST
+from django.http import JsonResponse
 from django.contrib.auth import login, logout
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import AuthenticationForm
@@ -508,3 +511,176 @@ def cleanup_data(request):
         messages.error(request, 'Permessi insufficienti')
     
     return redirect('frontend:settings')
+
+# ============================================================
+# Bulk Actions for Alarms (Added by install_alarms_ux.sh)
+# ============================================================
+
+# Aggiungi questo codice al file apps/frontend/views.py
+
+import json
+from django.http import JsonResponse
+from django.views.decorators.http import require_POST
+from django.contrib.auth.decorators import login_required
+from django.db import transaction
+
+@login_required
+@require_POST
+def bulk_alarm_action(request):
+    """
+    Esegui azione su più allarmi contemporaneamente
+    
+    POST data:
+        alarm_ids: List[int] - IDs degli allarmi
+        action: str - Azione da eseguire (acknowledge, resolve, false_positive, delete)
+    
+    Returns:
+        JSON: {success: bool, message: str, count: int}
+    """
+    try:
+        data = json.loads(request.body)
+        alarm_ids = data.get('alarm_ids', [])
+        action = data.get('action', '')
+        
+        if not alarm_ids:
+            return JsonResponse({
+                'success': False,
+                'message': 'Nessun allarme selezionato'
+            }, status=400)
+        
+        if action not in ['acknowledge', 'resolve', 'false_positive', 'delete']:
+            return JsonResponse({
+                'success': False,
+                'message': 'Azione non valida'
+            }, status=400)
+        
+        # Execute action in a transaction
+        with transaction.atomic():
+            alarms = Alarm.objects.filter(id__in=alarm_ids)
+            count = alarms.count()
+            
+            if count == 0:
+                return JsonResponse({
+                    'success': False,
+                    'message': 'Nessun allarme trovato'
+                }, status=404)
+            
+            now = timezone.now()
+            
+            if action == 'acknowledge':
+                alarms.update(
+                    status='acknowledged',
+                    acknowledged_at=now,
+                    acknowledged_by=request.user.username
+                )
+                message = f'{count} allarmi presi in carico con successo'
+                
+            elif action == 'resolve':
+                alarms.update(
+                    status='resolved',
+                    resolved_at=now
+                )
+                message = f'{count} allarmi risolti con successo'
+                
+            elif action == 'false_positive':
+                alarms.update(
+                    status='false_pos',
+                    resolved_at=now
+                )
+                message = f'{count} allarmi marcati come falsi positivi'
+                
+            elif action == 'delete':
+                alarms.delete()
+                message = f'{count} allarmi eliminati definitivamente'
+            
+            return JsonResponse({
+                'success': True,
+                'message': message,
+                'count': count
+            })
+            
+    except json.JSONDecodeError:
+        return JsonResponse({
+            'success': False,
+            'message': 'Dati JSON non validi'
+        }, status=400)
+        
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'message': f'Errore: {str(e)}'
+        }, status=500)
+
+
+@login_required
+def alarms_view(request):
+    """
+    Vista allarmi con supporto per get_all_ids (per selezione multipla)
+    
+    Modificare la view esistente alarms_view per aggiungere:
+    - Supporto per ?get_all_ids=1 (restituisce JSON con tutti gli ID filtrati)
+    """
+    # Get filters
+    status_filter = request.GET.get('status', '')
+    priority_filter = request.GET.get('priority', '')
+    
+    # Build queryset
+    alarms_qs = Alarm.objects.select_related('node').order_by('-triggered_at')
+    
+    if status_filter:
+        alarms_qs = alarms_qs.filter(status=status_filter)
+    
+    if priority_filter:
+        alarms_qs = alarms_qs.filter(priority=priority_filter)
+    
+    # Handle AJAX request for all IDs (for bulk selection)
+    if request.GET.get('get_all_ids') == '1':
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            alarm_ids = list(alarms_qs.values_list('id', flat=True))
+            return JsonResponse({
+                'alarm_ids': alarm_ids,
+                'count': len(alarm_ids)
+            })
+    
+    # Pagination
+    paginator = Paginator(alarms_qs, 20)  # 20 per page
+    page_number = request.GET.get('page', 1)
+    page_obj = paginator.get_page(page_number)
+    alarms = page_obj.object_list
+    
+    # Stats
+    thirty_days_ago = timezone.now() - timedelta(days=30)
+    
+    stats = {
+        'active': Alarm.objects.filter(status='active').count(),
+        'acknowledged': Alarm.objects.filter(status='acknowledged').count(),
+        'resolved': Alarm.objects.filter(
+            status='resolved',
+            resolved_at__gte=thirty_days_ago
+        ).count(),
+        'false_positive_rate': _calculate_false_positive_rate(),
+    }
+    
+    context = {
+        'alarms': alarms,
+        'page_obj': page_obj,
+        'stats': stats,
+    }
+    
+    return render(request, 'security/alarms.html', context)
+
+
+def _calculate_false_positive_rate():
+    """Calculate false positive rate (last 30 days)"""
+    thirty_days_ago = timezone.now() - timedelta(days=30)
+    
+    total = Alarm.objects.filter(triggered_at__gte=thirty_days_ago).count()
+    if total == 0:
+        return 0
+    
+    false_positives = Alarm.objects.filter(
+        triggered_at__gte=thirty_days_ago,
+        status='false_pos'
+    ).count()
+    
+    return round((false_positives / total) * 100, 1)
