@@ -388,7 +388,7 @@ class Simulator:
             qos = qos if qos is not None else self.mqtt_cfg.qos
             
             result = self.client.publish(full_topic, payload, qos=qos)
-            result.wait_for_publish(timeout=5)
+            result.wait_for_publish()
             
             return result.rc == mqtt.MQTT_ERR_SUCCESS
         
