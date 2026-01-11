@@ -3,6 +3,127 @@
 
 {% block title %}Allarmi - AgriSecure{% endblock %}
 
+{% block extra_css %}
+<style>
+    /* Animazioni per selezione */
+    .alarm-row.selected {
+        background-color: #dbeafe !important;
+        border-left: 4px solid #3b82f6;
+    }
+    
+    /* Toolbar azioni bulk */
+    .bulk-actions-toolbar {
+        transition: all 0.3s ease;
+        transform: translateY(-100%);
+        opacity: 0;
+        pointer-events: none;
+    }
+    
+    .bulk-actions-toolbar.visible {
+        transform: translateY(0);
+        opacity: 1;
+        pointer-events: all;
+    }
+    
+    /* Badge count */
+    .selection-count {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 24px;
+        height: 24px;
+        padding: 0 8px;
+        background-color: #3b82f6;
+        color: white;
+        border-radius: 12px;
+        font-size: 0.875rem;
+        font-weight: 600;
+        animation: pulse 0.3s ease;
+    }
+    
+    @keyframes pulse {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.1); }
+    }
+    
+    /* Toast notifications */
+    .toast {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        padding: 16px 24px;
+        background-color: white;
+        border-radius: 8px;
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        z-index: 1000;
+        animation: slideIn 0.3s ease;
+    }
+    
+    @keyframes slideIn {
+        from {
+            transform: translateX(400px);
+            opacity: 0;
+        }
+        to {
+            transform: translateX(0);
+            opacity: 1;
+        }
+    }
+    
+    .toast.success { border-left: 4px solid #10b981; }
+    .toast.error { border-left: 4px solid #ef4444; }
+    .toast.warning { border-left: 4px solid #f59e0b; }
+    
+    /* Checkbox custom */
+    .alarm-checkbox {
+        width: 18px;
+        height: 18px;
+        cursor: pointer;
+        accent-color: #3b82f6;
+    }
+    
+    /* Modal backdrop */
+    .modal-backdrop {
+        position: fixed;
+        inset: 0;
+        background-color: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 999;
+        animation: fadeIn 0.2s ease;
+    }
+    
+    @keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+    }
+    
+    .modal-content {
+        background: white;
+        border-radius: 12px;
+        max-width: 500px;
+        width: 90%;
+        padding: 24px;
+        animation: scaleIn 0.2s ease;
+    }
+    
+    @keyframes scaleIn {
+        from {
+            transform: scale(0.9);
+            opacity: 0;
+        }
+        to {
+            transform: scale(1);
+            opacity: 1;
+        }
+    }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="space-y-6">
     <!-- Header -->
@@ -65,6 +186,37 @@
         </div>
     </div>
     
+    <!-- Bulk Actions Toolbar (Hidden by default) -->
+    <div id="bulkActionsToolbar" class="bulk-actions-toolbar bg-blue-50 border border-blue-200 rounded-xl p-4">
+        <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <span class="selection-count" id="selectionCount">0</span>
+                <span class="text-gray-700 font-medium">allarmi selezionati</span>
+            </div>
+            <div class="flex gap-2">
+                <button onclick="bulkAcknowledge()" class="flex items-center px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition">
+                    <i data-lucide="check" class="w-4 h-4 mr-2"></i>
+                    ACK Multipli
+                </button>
+                <button onclick="bulkResolve()" class="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition">
+                    <i data-lucide="check-circle" class="w-4 h-4 mr-2"></i>
+                    Risolvi Multipli
+                </button>
+                <button onclick="bulkFalsePositive()" class="flex items-center px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition">
+                    <i data-lucide="x-circle" class="w-4 h-4 mr-2"></i>
+                    F.P. Multipli
+                </button>
+                <button onclick="bulkDelete()" class="flex items-center px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition">
+                    <i data-lucide="trash-2" class="w-4 h-4 mr-2"></i>
+                    Elimina
+                </button>
+                <button onclick="clearSelection()" class="flex items-center px-3 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+    
     <!-- Filters -->
     <div class="bg-white rounded-xl shadow-sm p-4">
         <form method="get" class="flex flex-wrap gap-4">
@@ -88,6 +240,11 @@
             <button type="submit" class="px-4 py-2 bg-agri-600 text-white rounded-lg hover:bg-agri-700">
                 Filtra
             </button>
+            {% if request.GET.status or request.GET.priority %}
+            <a href="{% url 'frontend:alarms' %}" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">
+                Reset Filtri
+            </a>
+            {% endif %}
         </form>
     </div>
     
@@ -98,6 +255,9 @@
             <table class="min-w-full divide-y divide-gray-200">
                 <thead class="bg-gray-50">
                     <tr>
+                        <th class="px-6 py-3 text-left">
+                            <input type="checkbox" id="selectAll" class="alarm-checkbox" onchange="toggleSelectAll(this)">
+                        </th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Priorità</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tipo</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nodo</th>
@@ -108,7 +268,10 @@
                 </thead>
                 <tbody class="bg-white divide-y divide-gray-200">
                     {% for alarm in alarms %}
-                    <tr class="hover:bg-gray-50">
+                    <tr class="alarm-row hover:bg-gray-50" data-alarm-id="{{ alarm.id }}">
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <input type="checkbox" class="alarm-checkbox row-checkbox" value="{{ alarm.id }}" onchange="updateSelection()">
+                        </td>
                         <td class="px-6 py-4 whitespace-nowrap">
                             <span class="px-2 py-1 rounded text-xs font-medium
                                 {% if alarm.priority == 'critical' %}bg-red-100 text-red-800
@@ -182,20 +345,52 @@
         {% if page_obj.has_other_pages %}
         <div class="px-6 py-4 border-t border-gray-200 flex items-center justify-between">
             <div class="text-sm text-gray-500">
-                Pagina {{ page_obj.number }} di {{ page_obj.paginator.num_pages }}
+                Pagina {{ page_obj.number }} di {{ page_obj.paginator.num_pages }} 
+                ({{ page_obj.paginator.count }} allarmi totali)
             </div>
-            <div class="flex space-x-2">
+            <div class="flex gap-2 items-center">
+                <!-- First Page -->
+                {% if page_obj.number > 1 %}
+                <a href="?page=1{% if request.GET.status %}&status={{ request.GET.status }}{% endif %}{% if request.GET.priority %}&priority={{ request.GET.priority }}{% endif %}" 
+                   class="px-3 py-1 bg-gray-100 rounded hover:bg-gray-200">
+                    ‹‹
+                </a>
+                {% endif %}
+                
+                <!-- Previous -->
                 {% if page_obj.has_previous %}
                 <a href="?page={{ page_obj.previous_page_number }}{% if request.GET.status %}&status={{ request.GET.status }}{% endif %}{% if request.GET.priority %}&priority={{ request.GET.priority }}{% endif %}" 
                    class="px-3 py-1 bg-gray-100 rounded hover:bg-gray-200">
-                    Precedente
+                    ‹ Precedente
                 </a>
                 {% endif %}
+                
+                <!-- Page Numbers -->
+                <span class="px-3 py-1 bg-blue-600 text-white rounded">
+                    {{ page_obj.number }}
+                </span>
+                
+                <!-- Next -->
                 {% if page_obj.has_next %}
                 <a href="?page={{ page_obj.next_page_number }}{% if request.GET.status %}&status={{ request.GET.status }}{% endif %}{% if request.GET.priority %}&priority={{ request.GET.priority }}{% endif %}"
                    class="px-3 py-1 bg-gray-100 rounded hover:bg-gray-200">
-                    Successiva
+                    Successiva ›
                 </a>
+                {% endif %}
+                
+                <!-- Last Page -->
+                {% if page_obj.number < page_obj.paginator.num_pages %}
+                <a href="?page={{ page_obj.paginator.num_pages }}{% if request.GET.status %}&status={{ request.GET.status }}{% endif %}{% if request.GET.priority %}&priority={{ request.GET.priority }}{% endif %}"
+                   class="px-3 py-1 bg-gray-100 rounded hover:bg-gray-200">
+                    ››
+                </a>
+                {% endif %}
+                
+                <!-- Select All Pages -->
+                {% if page_obj.paginator.num_pages > 1 %}
+                <button onclick="selectAllPages()" class="ml-4 px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200">
+                    Seleziona tutte le pagine ({{ page_obj.paginator.count }} allarmi)
+                </button>
                 {% endif %}
             </div>
         </div>
@@ -208,4 +403,245 @@
         {% endif %}
     </div>
 </div>
+
+<!-- Confirmation Modal (hidden by default) -->
+<div id="confirmModal" class="modal-backdrop hidden">
+    <div class="modal-content">
+        <div class="flex items-start mb-4">
+            <div class="p-3 bg-red-100 rounded-lg mr-4">
+                <i data-lucide="alert-triangle" class="w-6 h-6 text-red-600"></i>
+            </div>
+            <div class="flex-1">
+                <h3 class="text-lg font-bold text-gray-900 mb-2" id="modalTitle">Conferma azione</h3>
+                <p class="text-gray-600" id="modalMessage">Sei sicuro?</p>
+            </div>
+        </div>
+        <div class="flex justify-end gap-3 mt-6">
+            <button onclick="closeModal()" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300">
+                Annulla
+            </button>
+            <button id="confirmButton" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700">
+                Conferma
+            </button>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// State management
+let selectedAlarms = new Set();
+let selectAllPagesMode = false;
+let allAlarmIds = [];
+
+// Get CSRF token
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+// Update selection UI
+function updateSelection() {
+    const checkboxes = document.querySelectorAll('.row-checkbox');
+    selectedAlarms.clear();
+    
+    checkboxes.forEach(checkbox => {
+        if (checkbox.checked) {
+            selectedAlarms.add(checkbox.value);
+            checkbox.closest('.alarm-row').classList.add('selected');
+        } else {
+            checkbox.closest('.alarm-row').classList.remove('selected');
+        }
+    });
+    
+    // Update toolbar
+    const toolbar = document.getElementById('bulkActionsToolbar');
+    const count = document.getElementById('selectionCount');
+    
+    if (selectedAlarms.size > 0 || selectAllPagesMode) {
+        toolbar.classList.add('visible');
+        count.textContent = selectAllPagesMode ? allAlarmIds.length : selectedAlarms.size;
+    } else {
+        toolbar.classList.remove('visible');
+    }
+    
+    // Update select all checkbox
+    const selectAllCheckbox = document.getElementById('selectAll');
+    const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+    selectAllCheckbox.checked = allChecked;
+    selectAllCheckbox.indeterminate = selectedAlarms.size > 0 && !allChecked;
+}
+
+// Toggle select all (current page)
+function toggleSelectAll(checkbox) {
+    const checkboxes = document.querySelectorAll('.row-checkbox');
+    checkboxes.forEach(cb => {
+        cb.checked = checkbox.checked;
+    });
+    selectAllPagesMode = false;
+    updateSelection();
+}
+
+// Select all pages
+function selectAllPages() {
+    selectAllPagesMode = true;
+    
+    // Get all alarm IDs from current filtered view
+    fetch(window.location.href + '&get_all_ids=1', {
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        allAlarmIds = data.alarm_ids;
+        updateSelection();
+        showToast('success', `Selezionati tutti ${allAlarmIds.length} allarmi`);
+    });
+}
+
+// Clear selection
+function clearSelection() {
+    const checkboxes = document.querySelectorAll('.row-checkbox');
+    checkboxes.forEach(cb => cb.checked = false);
+    document.getElementById('selectAll').checked = false;
+    selectedAlarms.clear();
+    selectAllPagesMode = false;
+    allAlarmIds = [];
+    updateSelection();
+}
+
+// Show confirmation modal
+function showConfirmModal(title, message, onConfirm) {
+    const modal = document.getElementById('confirmModal');
+    document.getElementById('modalTitle').textContent = title;
+    document.getElementById('modalMessage').textContent = message;
+    
+    const confirmBtn = document.getElementById('confirmButton');
+    confirmBtn.onclick = () => {
+        onConfirm();
+        closeModal();
+    };
+    
+    modal.classList.remove('hidden');
+}
+
+// Close modal
+function closeModal() {
+    document.getElementById('confirmModal').classList.add('hidden');
+}
+
+// Show toast notification
+function showToast(type, message) {
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    toast.innerHTML = `
+        <i data-lucide="${type === 'success' ? 'check-circle' : type === 'error' ? 'x-circle' : 'alert-triangle'}" class="w-5 h-5"></i>
+        <span>${message}</span>
+    `;
+    document.body.appendChild(toast);
+    lucide.createIcons();
+    
+    setTimeout(() => {
+        toast.style.animation = 'fadeOut 0.3s ease';
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
+}
+
+// Bulk actions
+function bulkAcknowledge() {
+    const count = selectAllPagesMode ? allAlarmIds.length : selectedAlarms.size;
+    showConfirmModal(
+        'Prendi in carico multipli',
+        `Confermi di voler prendere in carico ${count} allarmi?`,
+        () => executeBulkAction('acknowledge')
+    );
+}
+
+function bulkResolve() {
+    const count = selectAllPagesMode ? allAlarmIds.length : selectedAlarms.size;
+    showConfirmModal(
+        'Risolvi multipli',
+        `Confermi di voler risolvere ${count} allarmi?`,
+        () => executeBulkAction('resolve')
+    );
+}
+
+function bulkFalsePositive() {
+    const count = selectAllPagesMode ? allAlarmIds.length : selectedAlarms.size;
+    showConfirmModal(
+        'Falsi positivi multipli',
+        `Confermi di voler marcare ${count} allarmi come falsi positivi?`,
+        () => executeBulkAction('false_positive')
+    );
+}
+
+function bulkDelete() {
+    const count = selectAllPagesMode ? allAlarmIds.length : selectedAlarms.size;
+    showConfirmModal(
+        '⚠️ ELIMINA ALLARMI',
+        `ATTENZIONE: Stai per eliminare definitivamente ${count} allarmi. Questa azione NON può essere annullata!`,
+        () => executeBulkAction('delete')
+    );
+}
+
+// Execute bulk action
+function executeBulkAction(action) {
+    const alarmIds = selectAllPagesMode ? allAlarmIds : Array.from(selectedAlarms);
+    
+    if (alarmIds.length === 0) {
+        showToast('warning', 'Nessun allarme selezionato');
+        return;
+    }
+    
+    fetch('{% url "frontend:bulk_alarm_action" %}', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken')
+        },
+        body: JSON.stringify({
+            alarm_ids: alarmIds,
+            action: action
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showToast('success', data.message);
+            setTimeout(() => location.reload(), 1500);
+        } else {
+            showToast('error', data.message || 'Errore durante l\'operazione');
+        }
+    })
+    .catch(error => {
+        showToast('error', 'Errore di rete');
+        console.error('Error:', error);
+    });
+}
+
+// Initialize
+document.addEventListener('DOMContentLoaded', () => {
+    updateSelection();
+    
+    // Close modal on backdrop click
+    document.getElementById('confirmModal').addEventListener('click', (e) => {
+        if (e.target.id === 'confirmModal') {
+            closeModal();
+        }
+    });
+});
+</script>
 {% endblock %}
