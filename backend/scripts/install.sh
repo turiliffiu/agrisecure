@@ -109,7 +109,7 @@ print_success "Sistema aggiornato"
 print_step 2 "Installazione dipendenze di sistema..."
 
 apt install -y \
-    python3 python3-pip python3-venv python3-dev \
+    python3 python3-pip python3-venv python3-dev python3-paho-mqtt \
     postgresql postgresql-contrib libpq-dev \
     redis-server mosquitto mosquitto-clients \
     nginx git build-essential curl
