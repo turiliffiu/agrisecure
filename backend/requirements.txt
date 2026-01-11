@@ -27,8 +27,8 @@ celery>=5.3.0
 django-celery-beat>=2.5.0
 django-celery-results>=2.5.0
 
-# MQTT
-paho-mqtt>=2.0.0
+# MQTT Communication
+paho-mqtt>=2.1.0
 
 # Authentication
 djangorestframework-simplejwt>=5.3.0
