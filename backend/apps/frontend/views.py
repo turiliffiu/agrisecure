@@ -300,41 +300,6 @@ def sensor_alert_resolve(request, alert_id):
 # Security Views
 # ============================================================
 
-@login_required
-def alarms(request):
-    """Lista allarmi"""
-    alarms_qs = Alarm.objects.select_related('node').order_by('-triggered_at')
-    
-    status = request.GET.get('status', '')
-    priority = request.GET.get('priority', '')
-    
-    if status:
-        alarms_qs = alarms_qs.filter(status=status)
-    if priority:
-        alarms_qs = alarms_qs.filter(priority=priority)
-    
-    paginator = Paginator(alarms_qs, 20)
-    page = request.GET.get('page', 1)
-    page_obj = paginator.get_page(page)
-    
-    all_alarms = Alarm.objects.all()
-    stats = {
-        'active': all_alarms.filter(status='active').count(),
-        'acknowledged': all_alarms.filter(status='acknowledged').count(),
-        'resolved': all_alarms.filter(
-            status='resolved',
-            triggered_at__gte=timezone.now() - timedelta(days=30)
-        ).count(),
-        'false_positive_rate': 0,
-    }
-    
-    context = {
-        'alarms': page_obj,
-        'page_obj': page_obj,
-        'stats': stats,
-    }
-    
-    return render(request, 'security/alarms.html', context)
 
 
 @login_required
@@ -611,18 +576,27 @@ def bulk_alarm_action(request):
             'message': f'Errore: {str(e)}'
         }, status=500)
 
-
 @login_required
-def alarms_view(request):
-    """
-    Vista allarmi con supporto per get_all_ids (per selezione multipla)
-    
-    Modificare la view esistente alarms_view per aggiungere:
-    - Supporto per ?get_all_ids=1 (restituisce JSON con tutti gli ID filtrati)
-    """
+def alarms(request):
+    """Vista allarmi con supporto per selezione multipla e page size dinamico"""
     # Get filters
     status_filter = request.GET.get('status', '')
     priority_filter = request.GET.get('priority', '')
+    page_size_param = request.GET.get('page_size', '20')
+    
+    # Determine page size
+    if page_size_param == 'all':
+        page_size = 'all'
+    else:
+        try:
+            page_size = int(page_size_param)
+            # Limit max to prevent performance issues
+            if page_size > 500:
+                page_size = 500
+            elif page_size < 10:
+                page_size = 10
+        except (ValueError, TypeError):
+            page_size = 20
     
     # Build queryset
     alarms_qs = Alarm.objects.select_related('node').order_by('-triggered_at')
@@ -643,10 +617,31 @@ def alarms_view(request):
             })
     
     # Pagination
-    paginator = Paginator(alarms_qs, 20)  # 20 per page
-    page_number = request.GET.get('page', 1)
-    page_obj = paginator.get_page(page_number)
-    alarms = page_obj.object_list
+    if page_size == 'all':
+        # No pagination - show all results
+        alarms = alarms_qs
+        # Create a mock page_obj for template compatibility
+        class MockPageObj:
+            def __init__(self, items):
+                self.object_list = items
+                self.number = 1
+                self.paginator = type('obj', (object,), {
+                    'num_pages': 1,
+                    'count': len(items)
+                })()
+            def has_other_pages(self):
+                return False
+            def has_previous(self):
+                return False
+            def has_next(self):
+                return False
+        page_obj = MockPageObj(alarms)
+    else:
+        # Normal pagination
+        paginator = Paginator(alarms_qs, page_size)
+        page_number = request.GET.get('page', 1)
+        page_obj = paginator.get_page(page_number)
+        alarms = page_obj.object_list
     
     # Stats
     thirty_days_ago = timezone.now() - timedelta(days=30)
@@ -665,6 +660,7 @@ def alarms_view(request):
         'alarms': alarms,
         'page_obj': page_obj,
         'stats': stats,
+        'page_size': page_size,  # NEW: Pass page_size to template
     }
     
     return render(request, 'security/alarms.html', context)
