@@ -219,17 +219,21 @@
     
     <!-- Filters -->
     <div class="bg-white rounded-xl shadow-sm p-4">
-        <form method="get" class="flex flex-wrap gap-4">
+        <form method="get" class="flex flex-wrap gap-4 items-center">
             <div class="flex items-center space-x-2">
                 <i data-lucide="filter" class="w-5 h-5 text-gray-400"></i>
                 <span class="text-sm text-gray-600">Filtri:</span>
             </div>
+            
+            <!-- Status Filter -->
             <select name="status" class="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-agri-500">
                 <option value="">Tutti gli stati</option>
                 <option value="active" {% if request.GET.status == 'active' %}selected{% endif %}>Attivi</option>
                 <option value="acknowledged" {% if request.GET.status == 'acknowledged' %}selected{% endif %}>In gestione</option>
                 <option value="resolved" {% if request.GET.status == 'resolved' %}selected{% endif %}>Risolti</option>
             </select>
+            
+            <!-- Priority Filter -->
             <select name="priority" class="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-agri-500">
                 <option value="">Tutte le priorità</option>
                 <option value="critical" {% if request.GET.priority == 'critical' %}selected{% endif %}>Critico</option>
@@ -237,11 +241,27 @@
                 <option value="medium" {% if request.GET.priority == 'medium' %}selected{% endif %}>Medio</option>
                 <option value="low" {% if request.GET.priority == 'low' %}selected{% endif %}>Basso</option>
             </select>
+            
+            <!-- FIXED: Page Size Selector using request.GET -->
+            <div class="flex items-center space-x-2 border-l border-gray-300 pl-4">
+                <i data-lucide="list" class="w-5 h-5 text-gray-400"></i>
+                <span class="text-sm text-gray-600">Righe:</span>
+                <select name="page_size" class="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-agri-500" onchange="this.form.submit()">
+                    <option value="20" {% if request.GET.page_size == "20" or not request.GET.page_size %}selected{% endif %}>20</option>
+                    <option value="50" {% if request.GET.page_size == "50" %}selected{% endif %}>50</option>
+                    <option value="100" {% if request.GET.page_size == "100" %}selected{% endif %}>100</option>
+                    <option value="200" {% if request.GET.page_size == "200" %}selected{% endif %}>200</option>
+                    <option value="500" {% if request.GET.page_size == "500" %}selected{% endif %}>500</option>
+                    <option value="all" {% if request.GET.page_size == "all" %}selected{% endif %}>Tutti</option>
+                </select>
+            </div>
+            
             <button type="submit" class="px-4 py-2 bg-agri-600 text-white rounded-lg hover:bg-agri-700">
                 Filtra
             </button>
+            
             {% if request.GET.status or request.GET.priority %}
-            <a href="{% url 'frontend:alarms' %}" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">
+            <a href="{% url 'frontend:alarms' %}?page_size={{ page_size }}" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">
                 Reset Filtri
             </a>
             {% endif %}
@@ -351,7 +371,7 @@
             <div class="flex gap-2 items-center">
                 <!-- First Page -->
                 {% if page_obj.number > 1 %}
-                <a href="?page=1{% if request.GET.status %}&status={{ request.GET.status }}{% endif %}{% if request.GET.priority %}&priority={{ request.GET.priority }}{% endif %}" 
+                <a href="?page=1{% if request.GET.status %}&status={{ request.GET.status }}{% endif %}{% if request.GET.priority %}&priority={{ request.GET.priority }}{% endif %}&page_size={{ page_size }}" 
                    class="px-3 py-1 bg-gray-100 rounded hover:bg-gray-200">
                     ‹‹
                 </a>
@@ -359,7 +379,7 @@
                 
                 <!-- Previous -->
                 {% if page_obj.has_previous %}
-                <a href="?page={{ page_obj.previous_page_number }}{% if request.GET.status %}&status={{ request.GET.status }}{% endif %}{% if request.GET.priority %}&priority={{ request.GET.priority }}{% endif %}" 
+                <a href="?page={{ page_obj.previous_page_number }}{% if request.GET.status %}&status={{ request.GET.status }}{% endif %}{% if request.GET.priority %}&priority={{ request.GET.priority }}{% endif %}&page_size={{ page_size }}" 
                    class="px-3 py-1 bg-gray-100 rounded hover:bg-gray-200">
                     ‹ Precedente
                 </a>
@@ -372,7 +392,7 @@
                 
                 <!-- Next -->
                 {% if page_obj.has_next %}
-                <a href="?page={{ page_obj.next_page_number }}{% if request.GET.status %}&status={{ request.GET.status }}{% endif %}{% if request.GET.priority %}&priority={{ request.GET.priority }}{% endif %}"
+                <a href="?page={{ page_obj.next_page_number }}{% if request.GET.status %}&status={{ request.GET.status }}{% endif %}{% if request.GET.priority %}&priority={{ request.GET.priority }}{% endif %}&page_size={{ page_size }}"
                    class="px-3 py-1 bg-gray-100 rounded hover:bg-gray-200">
                     Successiva ›
                 </a>
@@ -380,7 +400,7 @@
                 
                 <!-- Last Page -->
                 {% if page_obj.number < page_obj.paginator.num_pages %}
-                <a href="?page={{ page_obj.paginator.num_pages }}{% if request.GET.status %}&status={{ request.GET.status }}{% endif %}{% if request.GET.priority %}&priority={{ request.GET.priority }}{% endif %}"
+                <a href="?page={{ page_obj.paginator.num_pages }}{% if request.GET.status %}&status={{ request.GET.status }}{% endif %}{% if request.GET.priority %}&priority={{ request.GET.priority }}{% endif %}&page_size={{ page_size }}"
                    class="px-3 py-1 bg-gray-100 rounded hover:bg-gray-200">
                     ››
                 </a>
