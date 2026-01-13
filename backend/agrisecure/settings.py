@@ -21,6 +21,10 @@ ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(','
 
 # Application definition
 INSTALLED_APPS = [
+    # WebSocket support
+    'daphne',
+    'channels',
+    # WebSocket support
     # Django
     'django.contrib.admin',
     'django.contrib.auth',
@@ -348,3 +352,32 @@ LOGGING = {
 
 # Create logs directory
 (BASE_DIR / 'logs').mkdir(exist_ok=True)
+
+# ============================================================
+# Channels Configuration
+# ============================================================
+
+ASGI_APPLICATION = 'agrisecure.asgi.application'
+
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        'CONFIG': {
+            "hosts": [('127.0.0.1', 6379)],
+        },
+    },
+}
+
+# WebSocket settings
+WEBSOCKET_ACCEPT_ALL = False
+WEBSOCKET_HEARTBEAT_INTERVAL = 30
+
+# ============================================================
+# Channels Configuration
+# ============================================================
+
+ASGI_APPLICATION = 'agrisecure.asgi.application'
+
+# WebSocket settings
+WEBSOCKET_ACCEPT_ALL = False
+WEBSOCKET_HEARTBEAT_INTERVAL = 30
