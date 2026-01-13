@@ -147,7 +147,7 @@
                 </div>
                 <div>
                     <p class="text-sm text-gray-500">Attivi</p>
-                    <p class="text-2xl font-bold text-red-600">{{ stats.active }}</p>
+                    <p class="text-2xl font-bold text-red-600"><span id="stat_active">{{ stats.active }}</span></p>
                 </div>
             </div>
         </div>
@@ -158,7 +158,7 @@
                 </div>
                 <div>
                     <p class="text-sm text-gray-500">In gestione</p>
-                    <p class="text-2xl font-bold text-yellow-600">{{ stats.acknowledged }}</p>
+                    <p class="text-2xl font-bold text-yellow-600"><span id="stat_acknowledged">{{ stats.acknowledged }}</span></p>
                 </div>
             </div>
         </div>
@@ -169,7 +169,7 @@
                 </div>
                 <div>
                     <p class="text-sm text-gray-500">Risolti (30gg)</p>
-                    <p class="text-2xl font-bold text-green-600">{{ stats.resolved }}</p>
+                    <p class="text-2xl font-bold text-green-600"><span id="stat_resolved">{{ stats.resolved }}</span></p>
                 </div>
             </div>
         </div>
@@ -180,7 +180,7 @@
                 </div>
                 <div>
                     <p class="text-sm text-gray-500">Falsi positivi</p>
-                    <p class="text-2xl font-bold text-gray-600">{{ stats.false_positive_rate }}%</p>
+                    <p class="text-2xl font-bold text-gray-600"><span id="stat_false_positive_rate">{{ stats.false_positive_rate }}</span>%</p>
                 </div>
             </div>
         </div>
@@ -664,4 +664,244 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 </script>
+<script>
+// WebSocket connection for real-time alarms updates
+let alarmsSocket = null;
+let alarmsReconnectInterval = null;
+let isAlarmsConnecting = false;
+
+function connectAlarmsWebSocket() {
+    if (isAlarmsConnecting) return;
+    isAlarmsConnecting = true;
+    
+    // Determine WebSocket protocol
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${wsProtocol}//${window.location.host}/ws/alarms/`;
+    
+    console.log('🔌 Connecting to Alarms WebSocket:', wsUrl);
+    
+    alarmsSocket = new WebSocket(wsUrl);
+    
+    alarmsSocket.onopen = function(e) {
+        console.log('✅ Alarms WebSocket connected');
+        isAlarmsConnecting = false;
+        
+        // Clear reconnect interval if exists
+        if (alarmsReconnectInterval) {
+            clearInterval(alarmsReconnectInterval);
+            alarmsReconnectInterval = null;
+        }
+        
+        // Show connection indicator
+        showAlarmsConnectionStatus('connected');
+    };
+    
+    alarmsSocket.onmessage = function(e) {
+        const data = JSON.parse(e.data);
+        
+        if (data.type === 'stats_update') {
+            updateAlarmsStats(data.stats);
+        } else if (data.type === 'alarm_new') {
+            handleNewAlarm(data.alarm);
+        } else if (data.type === 'alarm_update') {
+            handleAlarmUpdate(data.alarm_id, data.status);
+        } else if (data.type === 'table_refresh') {
+            // Full table refresh needed
+            refreshAlarmsTable();
+        }
+    };
+    
+    alarmsSocket.onclose = function(e) {
+        console.log('❌ Alarms WebSocket disconnected');
+        isAlarmsConnecting = false;
+        alarmsSocket = null;
+        
+        // Show disconnection indicator
+        showAlarmsConnectionStatus('disconnected');
+        
+        // Try to reconnect after 3 seconds
+        if (!alarmsReconnectInterval) {
+            alarmsReconnectInterval = setInterval(() => {
+                console.log('🔄 Attempting to reconnect...');
+                connectAlarmsWebSocket();
+            }, 3000);
+        }
+    };
+    
+    alarmsSocket.onerror = function(e) {
+        console.error('❌ Alarms WebSocket error:', e);
+        isAlarmsConnecting = false;
+    };
+}
+
+function updateAlarmsStats(stats) {
+    console.log('📊 Updating alarms stats');
+    
+    // Update stats cards
+    updateStatElement('stat_active', stats.active);
+    updateStatElement('stat_acknowledged', stats.acknowledged);
+    updateStatElement('stat_resolved', stats.resolved);
+    updateStatElement('stat_false_positive_rate', stats.false_positive_rate + '%');
+}
+
+function updateStatElement(id, value) {
+    const element = document.getElementById(id);
+    if (element) {
+        const oldValue = element.textContent;
+        element.textContent = value;
+        
+        // Add flash animation if value changed
+        if (oldValue !== value.toString()) {
+            element.classList.add('flash-update');
+            setTimeout(() => element.classList.remove('flash-update'), 500);
+        }
+    }
+}
+
+function handleNewAlarm(alarm) {
+    console.log('🆕 New alarm received:', alarm);
+    
+    // Show notification
+    showAlarmNotification('Nuovo Allarme!', `${alarm.classification} - ${alarm.priority}`, 'warning');
+    
+    // Refresh table to show new alarm
+    refreshAlarmsTable();
+}
+
+function handleAlarmUpdate(alarmId, status) {
+    console.log('🔄 Alarm updated:', alarmId, status);
+    
+    // Update alarm row if visible
+    const row = document.querySelector(`tr[data-alarm-id="${alarmId}"]`);
+    if (row) {
+        // Update status badge
+        const statusBadge = row.querySelector('.status-badge');
+        if (statusBadge) {
+            updateStatusBadge(statusBadge, status);
+        }
+    }
+}
+
+function updateStatusBadge(badge, status) {
+    // Remove old classes
+    badge.classList.remove('bg-red-100', 'text-red-800', 'bg-yellow-100', 'text-yellow-800', 'bg-green-100', 'text-green-800');
+    
+    // Add new classes based on status
+    if (status === 'active') {
+        badge.classList.add('bg-red-100', 'text-red-800');
+        badge.textContent = 'Attivo';
+    } else if (status === 'acknowledged') {
+        badge.classList.add('bg-yellow-100', 'text-yellow-800');
+        badge.textContent = 'In gestione';
+    } else if (status === 'resolved') {
+        badge.classList.add('bg-green-100', 'text-green-800');
+        badge.textContent = 'Risolto';
+    }
+}
+
+function refreshAlarmsTable() {
+    console.log('🔄 Refreshing alarms table...');
+    
+    // Show loading indicator (optional)
+    showRefreshIndicator();
+    
+    // Reload page to get fresh data
+    // Note: This maintains current filters and page_size
+    setTimeout(() => {
+        window.location.reload();
+    }, 500);
+}
+
+function showRefreshIndicator() {
+    // Optional: show a subtle indicator that refresh is happening
+    const indicator = document.createElement('div');
+    indicator.style.cssText = 'position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(59, 130, 246, 0.9); color: white; padding: 16px 24px; border-radius: 8px; z-index: 9999; font-size: 14px;';
+    indicator.textContent = '🔄 Aggiornamento...';
+    document.body.appendChild(indicator);
+    
+    setTimeout(() => indicator.remove(), 800);
+}
+
+function showAlarmsConnectionStatus(status) {
+    let indicator = document.getElementById('ws_alarms_indicator');
+    
+    if (!indicator) {
+        // Create indicator if doesn't exist
+        indicator = document.createElement('div');
+        indicator.id = 'ws_alarms_indicator';
+        indicator.style.cssText = 'position: fixed; top: 10px; right: 10px; padding: 8px 12px; border-radius: 6px; font-size: 12px; z-index: 9999;';
+        document.body.appendChild(indicator);
+    }
+    
+    if (status === 'connected') {
+        indicator.textContent = '🟢 Real-time';
+        indicator.style.background = '#10b981';
+        indicator.style.color = 'white';
+        
+        // Hide after 2 seconds
+        setTimeout(() => {
+            indicator.style.display = 'none';
+        }, 2000);
+    } else {
+        indicator.textContent = '🔴 Disconnected';
+        indicator.style.background = '#ef4444';
+        indicator.style.color = 'white';
+        indicator.style.display = 'block';
+    }
+}
+
+function showAlarmNotification(title, message, type) {
+    // Use existing toast system or create notification
+    if (typeof showToast !== 'undefined') {
+        showToast(type, `${title} ${message}`);
+    } else {
+        // Fallback notification
+        const notification = document.createElement('div');
+        notification.style.cssText = 'position: fixed; top: 80px; right: 20px; background: white; border-left: 4px solid #f59e0b; padding: 16px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 9999; max-width: 320px;';
+        notification.innerHTML = `
+            <div style="font-weight: bold; margin-bottom: 4px;">${title}</div>
+            <div style="font-size: 14px; color: #666;">${message}</div>
+        `;
+        document.body.appendChild(notification);
+        
+        setTimeout(() => {
+            notification.style.animation = 'fadeOut 0.3s ease';
+            setTimeout(() => notification.remove(), 300);
+        }, 4000);
+    }
+}
+
+// Connect on page load
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('🚀 Initializing Alarms WebSocket');
+    connectAlarmsWebSocket();
+});
+
+// Cleanup on page unload
+window.addEventListener('beforeunload', function() {
+    if (alarmsSocket) {
+        alarmsSocket.close();
+    }
+    if (alarmsReconnectInterval) {
+        clearInterval(alarmsReconnectInterval);
+    }
+});
+</script>
+
+<style>
+/* Add these styles if not already present */
+.flash-update {
+    animation: flashAnimation 0.5s ease;
+}
+
+@keyframes flashAnimation {
+    0%, 100% { background-color: transparent; }
+    50% { background-color: rgba(59, 130, 246, 0.2); }
+}
+
+@keyframes fadeOut {
+    from { opacity: 1; transform: translateX(0); }
+    to { opacity: 0; transform: translateX(20px); }
+}
+</style>
 {% endblock %}
