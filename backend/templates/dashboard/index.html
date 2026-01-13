@@ -24,8 +24,8 @@
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm font-medium text-gray-500">Nodi Online</p>
-                    <p class="text-3xl font-bold text-gray-900 mt-1">{{ nodes_online }}</p>
-                    <p class="text-sm text-gray-500 mt-1">su {{ total_nodes }} totali</p>
+                    <p class="text-3xl font-bold text-gray-900 mt-1"><span id="nodes_online">{{ nodes_online }}</span></p>
+                    <p class="text-sm text-gray-500 mt-1">su <span id="total_nodes">{{ total_nodes }}</span> totali</p>
                 </div>
                 <div class="p-3 rounded-full bg-green-100 text-green-600">
                     <i data-lucide="wifi" class="w-6 h-6"></i>
@@ -38,7 +38,7 @@
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm font-medium text-gray-500">Nodi Offline</p>
-                    <p class="text-3xl font-bold {% if nodes_offline > 0 %}text-red-600{% else %}text-gray-900{% endif %} mt-1">{{ nodes_offline }}</p>
+                    <p class="text-3xl font-bold {% if nodes_offline > 0 %}text-red-600{% else %}text-gray-900{% endif %} mt-1"><span id="nodes_offline">{{ nodes_offline }}</span></p>
                 </div>
                 <div class="p-3 rounded-full {% if nodes_offline > 0 %}bg-red-100 text-red-600{% else %}bg-green-100 text-green-600{% endif %}">
                     <i data-lucide="wifi-off" class="w-6 h-6"></i>
@@ -51,8 +51,8 @@
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm font-medium text-gray-500">Allarmi Attivi</p>
-                    <p class="text-3xl font-bold {% if active_alarms > 0 %}text-red-600{% else %}text-gray-900{% endif %} mt-1">{{ active_alarms }}</p>
-                    <p class="text-sm text-gray-500 mt-1">{{ alarms_today }} oggi</p>
+                    <p class="text-3xl font-bold {% if active_alarms > 0 %}text-red-600{% else %}text-gray-900{% endif %} mt-1"><span id="active_alarms">{{ active_alarms }}</span></p>
+                    <p class="text-sm text-gray-500 mt-1"><span id="alarms_today">{{ alarms_today }}</span> oggi</p>
                 </div>
                 <div class="p-3 rounded-full {% if active_alarms > 0 %}bg-red-100 text-red-600{% else %}bg-green-100 text-green-600{% endif %}">
                     <i data-lucide="bell" class="w-6 h-6"></i>
@@ -87,7 +87,7 @@
                 <div>
                     <p class="text-sm text-gray-500">Temperatura</p>
                     <p class="text-2xl font-bold text-gray-900">
-                        {% if latest_temperature %}{{ latest_temperature|floatformat:1 }}°C{% else %}-{% endif %}
+                        {% if latest_temperature %}<span id="latest_temperature">{{ latest_temperature|floatformat:1 }}°C</span>{% else %}<span id="latest_temperature">-</span>{% endif %}
                     </p>
                 </div>
             </div>
@@ -101,7 +101,7 @@
                 <div>
                     <p class="text-sm text-gray-500">Umidità</p>
                     <p class="text-2xl font-bold text-gray-900">
-                        {% if latest_humidity %}{{ latest_humidity|floatformat:0 }}%{% else %}-{% endif %}
+                        {% if latest_humidity %}<span id="latest_humidity">{{ latest_humidity|floatformat:0 }}%</span>{% else %}<span id="latest_humidity">-</span>{% endif %}
                     </p>
                 </div>
             </div>
@@ -115,7 +115,7 @@
                 <div>
                     <p class="text-sm text-gray-500">Umidità Suolo</p>
                     <p class="text-2xl font-bold text-gray-900">
-                        {% if latest_soil %}{{ latest_soil|floatformat:0 }}%{% else %}-{% endif %}
+                        {% if latest_soil %}<span id="latest_soil">{{ latest_soil|floatformat:0 }}%</span>{% else %}<span id="latest_soil">-</span>{% endif %}
                     </p>
                 </div>
             </div>
@@ -181,7 +181,7 @@
         <div>
             <p class="font-medium text-yellow-800">Attenzione Batterie</p>
             <p class="text-sm text-yellow-700">
-                {{ battery_warnings }} nod{{ battery_warnings|pluralize:"o,i" }} 
+                <span id="battery_warnings">{{ battery_warnings }}</span> nod{{ battery_warnings|pluralize:"o,i" }} 
                 ha{{ battery_warnings|pluralize:",nno" }} la batteria sotto il 20%
             </p>
         </div>
@@ -250,4 +250,267 @@
     // Auto-refresh ogni 60 secondi
     setTimeout(() => location.reload(), 60000);
 </script>
+
+// ============================================================
+// WEBSOCKET REAL-TIME UPDATES FOR DASHBOARD
+// ============================================================
+
+<script>
+// WebSocket connection for real-time dashboard updates
+let dashboardSocket = null;
+let reconnectInterval = null;
+let isConnecting = false;
+
+function connectDashboardWebSocket() {
+    if (isConnecting) return;
+    isConnecting = true;
+    
+    // Determine WebSocket protocol
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${wsProtocol}//${window.location.host}/ws/dashboard/`;
+    
+    console.log('🔌 Connecting to Dashboard WebSocket:', wsUrl);
+    
+    dashboardSocket = new WebSocket(wsUrl);
+    
+    dashboardSocket.onopen = function(e) {
+        console.log('✅ Dashboard WebSocket connected');
+        isConnecting = false;
+        
+        // Clear reconnect interval if exists
+        if (reconnectInterval) {
+            clearInterval(reconnectInterval);
+            reconnectInterval = null;
+        }
+        
+        // Show connection indicator (optional)
+        showConnectionStatus('connected');
+    };
+    
+    dashboardSocket.onmessage = function(e) {
+        const data = JSON.parse(e.data);
+        
+        if (data.type === 'dashboard_update') {
+            updateDashboard(data.data);
+        }
+    };
+    
+    dashboardSocket.onclose = function(e) {
+        console.log('❌ Dashboard WebSocket disconnected');
+        isConnecting = false;
+        dashboardSocket = null;
+        
+        // Show disconnection indicator
+        showConnectionStatus('disconnected');
+        
+        // Try to reconnect after 3 seconds
+        if (!reconnectInterval) {
+            reconnectInterval = setInterval(() => {
+                console.log('🔄 Attempting to reconnect...');
+                connectDashboardWebSocket();
+            }, 3000);
+        }
+    };
+    
+    dashboardSocket.onerror = function(e) {
+        console.error('❌ WebSocket error:', e);
+        isConnecting = false;
+    };
+}
+
+function updateDashboard(data) {
+    console.log('📊 Updating dashboard with real-time data');
+    
+    // Update node stats
+    if (data.nodes) {
+        updateElement('total_nodes', data.nodes.total);
+        updateElement('nodes_online', data.nodes.online);
+        updateElement('nodes_offline', data.nodes.offline);
+    }
+    
+    // Update alarm stats
+    if (data.alarms) {
+        updateElement('active_alarms', data.alarms.active);
+        updateElement('alarms_today', data.alarms.today);
+        
+        // Update recent alarms list
+        if (data.alarms.recent && data.alarms.recent.length > 0) {
+            updateRecentAlarms(data.alarms.recent);
+        }
+    }
+    
+    // Update sensor readings
+    if (data.sensors) {
+        if (data.sensors.temperature !== null) {
+            updateElement('latest_temperature', data.sensors.temperature.toFixed(1) + '°C');
+        }
+        if (data.sensors.humidity !== null) {
+            updateElement('latest_humidity', data.sensors.humidity.toFixed(1) + '%');
+        }
+        if (data.sensors.soil_moisture !== null) {
+            updateElement('latest_soil', data.sensors.soil_moisture.toFixed(1) + '%');
+        }
+    }
+    
+    // Update battery warnings
+    if (data.battery_warnings !== undefined) {
+        updateElement('battery_warnings', data.battery_warnings);
+    }
+    
+    // Update arm state
+    if (data.system) {
+        updateArmState(data.system.armed, data.system.arm_mode);
+    }
+    
+    // Add subtle flash animation to show update
+    flashUpdate();
+}
+
+function updateElement(id, value) {
+    const element = document.getElementById(id);
+    if (element) {
+        const oldValue = element.textContent;
+        element.textContent = value;
+        
+        // Add flash animation if value changed
+        if (oldValue !== value.toString()) {
+            element.classList.add('flash-update');
+            setTimeout(() => element.classList.remove('flash-update'), 500);
+        }
+    }
+}
+
+function updateRecentAlarms(alarms) {
+    const container = document.getElementById('recent_alarms_list');
+    if (!container) return;
+    
+    // Build HTML for recent alarms
+    let html = '';
+    alarms.forEach(alarm => {
+        const priorityColors = {
+            'critical': 'bg-red-100 text-red-800',
+            'high': 'bg-orange-100 text-orange-800',
+            'medium': 'bg-yellow-100 text-yellow-800',
+            'low': 'bg-blue-100 text-blue-800'
+        };
+        
+        const statusColors = {
+            'active': 'bg-red-100 text-red-800',
+            'acknowledged': 'bg-yellow-100 text-yellow-800',
+            'resolved': 'bg-green-100 text-green-800'
+        };
+        
+        html += `
+            <div class="flex items-center justify-between py-2 border-b border-gray-100">
+                <div class="flex-1">
+                    <span class="px-2 py-1 rounded text-xs font-medium ${priorityColors[alarm.priority] || ''}">
+                        ${alarm.priority}
+                    </span>
+                    <span class="ml-2 text-sm">${alarm.classification}</span>
+                    <span class="ml-2 text-xs text-gray-500">${alarm.node_name}</span>
+                </div>
+                <div class="text-right">
+                    <div class="text-xs text-gray-500">${alarm.triggered_at}</div>
+                    <span class="px-2 py-1 rounded text-xs font-medium ${statusColors[alarm.status] || ''}">
+                        ${alarm.status}
+                    </span>
+                </div>
+            </div>
+        `;
+    });
+    
+    container.innerHTML = html;
+}
+
+function updateArmState(armed, mode) {
+    const indicator = document.getElementById('arm_state_indicator');
+    const modeText = document.getElementById('arm_mode_text');
+    
+    if (indicator) {
+        if (armed) {
+            indicator.classList.remove('bg-gray-500');
+            indicator.classList.add('bg-red-500');
+        } else {
+            indicator.classList.remove('bg-red-500');
+            indicator.classList.add('bg-gray-500');
+        }
+    }
+    
+    if (modeText && mode) {
+        modeText.textContent = mode;
+    }
+}
+
+function showConnectionStatus(status) {
+    // Optional: show connection indicator
+    let indicator = document.getElementById('ws_connection_indicator');
+    
+    if (!indicator) {
+        // Create indicator if doesn't exist
+        indicator = document.createElement('div');
+        indicator.id = 'ws_connection_indicator';
+        indicator.style.cssText = 'position: fixed; top: 10px; right: 10px; padding: 8px 12px; border-radius: 6px; font-size: 12px; z-index: 9999;';
+        document.body.appendChild(indicator);
+    }
+    
+    if (status === 'connected') {
+        indicator.textContent = '🟢 Real-time';
+        indicator.style.background = '#10b981';
+        indicator.style.color = 'white';
+        
+        // Hide after 2 seconds
+        setTimeout(() => {
+            indicator.style.display = 'none';
+        }, 2000);
+    } else {
+        indicator.textContent = '🔴 Disconnected';
+        indicator.style.background = '#ef4444';
+        indicator.style.color = 'white';
+        indicator.style.display = 'block';
+    }
+}
+
+function flashUpdate() {
+    // Add subtle background flash to indicate update
+    document.body.classList.add('dashboard-updated');
+    setTimeout(() => document.body.classList.remove('dashboard-updated'), 300);
+}
+
+// Connect on page load
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('🚀 Initializing Dashboard WebSocket');
+    connectDashboardWebSocket();
+});
+
+// Cleanup on page unload
+window.addEventListener('beforeunload', function() {
+    if (dashboardSocket) {
+        dashboardSocket.close();
+    }
+    if (reconnectInterval) {
+        clearInterval(reconnectInterval);
+    }
+});
+</script>
+
+<style>
+/* WebSocket Dashboard Styles */
+.flash-update {
+    animation: flashAnimation 0.5s ease;
+}
+
+@keyframes flashAnimation {
+    0%, 100% { background-color: transparent; }
+    50% { background-color: rgba(59, 130, 246, 0.2); }
+}
+
+.dashboard-updated {
+    animation: dashboardFlash 0.3s ease;
+}
+
+@keyframes dashboardFlash {
+    0%, 100% { background-color: inherit; }
+    50% { background-color: rgba(16, 185, 129, 0.05); }
+}
+</style>
 {% endblock %}
