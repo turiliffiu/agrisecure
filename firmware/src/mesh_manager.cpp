@@ -354,7 +354,7 @@ void MeshManager::_onDataSent(const uint8_t* mac, esp_now_send_status_t status) 
     }
 }
 
-void MeshManager::_onDataRecv(const esp_now_recv_info_t* info, const uint8_t* data, int len) {
+void MeshManager::_onDataRecv(const uint8_t* mac, const uint8_t* data, int len) {
     if (!_instance || len != sizeof(MeshMessage)) {
         return;
     }
@@ -376,26 +376,26 @@ void MeshManager::_onDataRecv(const esp_now_recv_info_t* info, const uint8_t* da
                  msg->msg_type, msg->sender_id, msg->sequence);
     
     // Aggiorna/aggiungi peer
-    MeshPeer* peer = _instance->_findPeerByMac(info->src_addr);
+    MeshPeer* peer = _instance->_findPeerByMac(mac);
     if (!peer) {
         // Nuovo peer
         MeshPeer new_peer;
-        memcpy(new_peer.mac, info->src_addr, 6);
+        memcpy(new_peer.mac, mac, 6);
         strncpy(new_peer.node_id, msg->sender_id, NODE_ID_SIZE - 1);
-        new_peer.rssi = info->rx_ctrl->rssi;
+        new_peer.rssi = 0;  // TODO: RSSI non disponibile con callback ESP-NOW legacy di questo framework
         new_peer.last_seen = millis();
         new_peer.is_gateway = (msg->msg_type == MSG_HEARTBEAT && 
                                ((HeartbeatData*)msg->payload)->node_type == NODE_GATEWAY);
         new_peer.hop_to_gateway = 1;
         
-        _instance->_addPeer(info->src_addr);
+        _instance->_addPeer(mac);
         _instance->_peers.push_back(new_peer);
         
         DEBUG_PRINTF("Nuovo peer: %s (%s)\n", new_peer.node_id, 
                      macToString(new_peer.mac).c_str());
     } else {
         // Aggiorna peer esistente
-        peer->rssi = info->rx_ctrl->rssi;
+        // RSSI non aggiornato: non disponibile con callback ESP-NOW legacy di questo framework
         peer->last_seen = millis();
     }
     
@@ -405,7 +405,7 @@ void MeshManager::_onDataRecv(const esp_now_recv_info_t* info, const uint8_t* da
         
         // Chiama callback utente
         if (_instance->_message_callback) {
-            _instance->_message_callback(msg, info->src_addr);
+            _instance->_message_callback(msg, mac);
         }
     } else if (_instance->_node_type == NODE_GATEWAY) {
         // Gateway: routing verso destinazione
