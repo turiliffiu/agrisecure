@@ -25,6 +25,7 @@
 // TinyGSM per modem 4G
 #define TINY_GSM_MODEM_SIM7600  // Compatibile anche con A7670
 #include <TinyGsmClient.h>
+#include <SSLClientESP32.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 
@@ -83,12 +84,53 @@
 #define MQTT_TOPIC_CONFIG MQTT_TOPIC_ROOT "/config"
 
 // ============================================================
+// Certificato CA per TLS (broker MQTT agrisecure.tgs.ovh:8883)
+// ============================================================
+static const char ca_cert_pem[] PROGMEM = R"CERT(
+-----BEGIN CERTIFICATE-----
+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
+HUEzzgs=
+-----END CERTIFICATE-----
+)CERT";
+
+// ============================================================
 // Oggetti Globali
 // ============================================================
 HardwareSerial SerialGSM(1);  // UART1 per modem
 TinyGsm modem(SerialGSM);
 TinyGsmClient gsmClient(modem);
-PubSubClient mqtt(gsmClient);
+SSLClientESP32 sslClient(&gsmClient);
+PubSubClient mqtt(sslClient);
 
 // ============================================================
 // Variabili Globali
@@ -150,7 +192,8 @@ void setup() {
             gprs_connected = true;
             Serial.println(F("✓ GPRS connesso"));
             
-            // Configura MQTT
+            // Configura TLS + MQTT
+            sslClient.setCACert(ca_cert_pem);
             mqtt.setServer(MQTT_BROKER, MQTT_PORT);
             mqtt.setCallback(mqttCallback);
             mqtt.setBufferSize(512);
