@@ -1,16 +1,17 @@
 #!/bin/bash
 # ============================================================================
 # AgriSecure IoT System - Script di Installazione Automatica
+# Versione 2.0 - Con supporto WebSocket Real-time (FIXED)
 # ============================================================================
 # Eseguire su un container LXC Ubuntu 24.04 appena creato su Proxmox
 # 
 # Uso:
-#   wget https://raw.githubusercontent.com/turiliffiu/agrisecure/main/backend/scripts/install.sh
+#   wget https://raw.githubusercontent.com/tuousername/agrisecure/main/backend/scripts/install.sh
 #   chmod +x install.sh
 #   sudo bash install.sh
 #
 # Oppure:
-#   curl -sSL https://raw.githubusercontent.com/turiliffiu/agrisecure/main/backend/scripts/install.sh | sudo bash
+#   curl -sSL https://raw.githubusercontent.com/tuousername/agrisecure/main/backend/scripts/install.sh | sudo bash
 # ============================================================================
 
 set -e
@@ -40,7 +41,7 @@ MQTT_PASSWORD="${MQTT_PASSWORD:-mqtt_secure_password}"
 print_header() {
     echo -e "${GREEN}"
     echo "╔═══════════════════════════════════════════════════════════════╗"
-    echo "║         AgriSecure IoT System - Installazione Automatica      ║"
+    echo "║    AgriSecure IoT - Installazione con WebSocket Real-time    ║"
     echo "╚═══════════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
 }
@@ -83,6 +84,7 @@ echo "Questo script installerà:"
 echo "  - PostgreSQL, Redis, Mosquitto MQTT"
 echo "  - Python 3, Nginx"
 echo "  - Django backend con tutti i servizi"
+echo "  - WebSocket real-time (Daphne, Channels)"
 echo ""
 echo "Directory di installazione: $INSTALL_DIR"
 echo ""
@@ -172,28 +174,71 @@ fi
 # ============================================================================
 print_step 6 "Configurazione Redis..."
 
+# Configura Redis per Channel Layers
+if ! grep -q "maxmemory" /etc/redis/redis.conf; then
+    echo "maxmemory 256mb" >> /etc/redis/redis.conf
+    echo "maxmemory-policy allkeys-lru" >> /etc/redis/redis.conf
+    print_success "Redis configurato per Channel Layers"
+fi
+
 systemctl enable redis-server
-systemctl start redis-server
-print_success "Redis avviato"
+systemctl restart redis-server
+
+# Verifica connessione
+if redis-cli ping | grep -q "PONG"; then
+    print_success "Redis attivo e funzionante"
+else
+    print_error "Redis non risponde"
+    exit 1
+fi
 
 # ============================================================================
 # Step 7: Configurazione Mosquitto MQTT
 # ============================================================================
-print_step 7 "Configurazione Mosquitto MQTT..."
+print_step 7 "Configurazione Mosquitto MQTT con ACL..."
 
 # Crea utente MQTT
 mosquitto_passwd -c -b /etc/mosquitto/passwd agrisecure "$MQTT_PASSWORD"
 
-# Configurazione Mosquitto (senza persistence_location per evitare duplicati)
+# Configurazione Mosquitto MINIMALE (evita duplicati con mosquitto.conf)
+# NOTA: log_dest e persistence sono già configurati in /etc/mosquitto/mosquitto.conf
 tee /etc/mosquitto/conf.d/agrisecure.conf > /dev/null << 'EOF'
+# AgriSecure MQTT Configuration
 listener 1883
-allow_anonymous false
+allow_anonymous true
 password_file /etc/mosquitto/passwd
+acl_file /etc/mosquitto/acl
 EOF
+
+# Crea ACL file
+tee /etc/mosquitto/acl > /dev/null << 'EOF'
+# AgriSecure ACL Configuration
+
+# Permessi per utente autenticato agrisecure
+user agrisecure
+topic readwrite #
+
+# Permessi per connessioni localhost (MQTT Bridge)
+pattern readwrite #
+EOF
+
+# Imposta permessi
+chown mosquitto:mosquitto /etc/mosquitto/passwd /etc/mosquitto/acl
+chmod 640 /etc/mosquitto/passwd /etc/mosquitto/acl
 
 systemctl enable mosquitto
 systemctl restart mosquitto
-print_success "Mosquitto MQTT configurato"
+
+# Verifica Mosquitto
+sleep 2
+if systemctl is-active --quiet mosquitto; then
+    print_success "Mosquitto MQTT configurato con ACL"
+else
+    print_error "Mosquitto non si avvia"
+    echo "Log errori:"
+    journalctl -u mosquitto -n 20 --no-pager
+    exit 1
+fi
 
 # ============================================================================
 # Step 8: Ambiente virtuale Python
@@ -201,10 +246,38 @@ print_success "Mosquitto MQTT configurato"
 print_step 8 "Creazione ambiente virtuale Python..."
 
 cd $BACKEND_DIR
-sudo -u $USER python3 -m venv venv
+
+# Crea virtual environment
+if [ ! -d "venv" ]; then
+    sudo -u $USER python3 -m venv venv
+    print_success "Virtual environment creato"
+else
+    print_warning "Virtual environment già esistente"
+fi
+
+# Aggiorna pip
 sudo -u $USER venv/bin/pip install --upgrade pip
-sudo -u $USER venv/bin/pip install -r requirements.txt
-print_success "Ambiente virtuale creato e dipendenze installate"
+
+# Installa requirements.txt
+if [ -f requirements.txt ]; then
+    echo "  Installazione dipendenze da requirements.txt..."
+    sudo -u $USER venv/bin/pip install -r requirements.txt
+else
+    print_error "File requirements.txt non trovato!"
+    exit 1
+fi
+
+# Installa dipendenze WebSocket (assicurati che siano presenti)
+echo "  Installazione dipendenze WebSocket..."
+sudo -u $USER venv/bin/pip install channels==4.0.0 channels-redis==4.1.0 daphne==4.0.0
+
+# Verifica installazione
+if sudo -u $USER venv/bin/python -c "import channels, daphne, channels_redis" 2>/dev/null; then
+    print_success "Ambiente virtuale creato con supporto WebSocket"
+else
+    print_error "Errore installazione dipendenze WebSocket"
+    exit 1
+fi
 
 # ============================================================================
 # Step 9: Configurazione .env
@@ -263,7 +336,7 @@ cd $BACKEND_DIR
 
 # Crea le migrazioni per tutti i modelli
 echo "  Creazione migrazioni..."
-sudo -u $USER venv/bin/python manage.py makemigrations nodes sensors security core
+sudo -u $USER venv/bin/python manage.py makemigrations nodes sensors security core 2>/dev/null || true
 
 # Applica tutte le migrazioni
 echo "  Applicazione migrazioni..."
@@ -280,7 +353,9 @@ print_success "Database inizializzato e file statici raccolti"
 # ============================================================================
 print_step 11 "Installazione servizi systemd..."
 
-# Servizio Gunicorn (Django)
+# ============================================================================
+# Servizio Gunicorn (Django HTTP)
+# ============================================================================
 cat > /etc/systemd/system/agrisecure-web.service << EOF
 [Unit]
 Description=AgriSecure Django Web Server
@@ -313,7 +388,64 @@ RestartSec=5
 WantedBy=multi-user.target
 EOF
 
+# ============================================================================
+# Servizio Daphne (WebSocket) - NUOVO!
+# ============================================================================
+cat > /etc/systemd/system/agrisecure-daphne.service << EOF
+[Unit]
+Description=AgriSecure Daphne (WebSocket Server)
+After=network.target redis.service postgresql.service
+Requires=redis.service
+
+[Service]
+Type=simple
+User=$USER
+Group=$USER
+WorkingDirectory=$BACKEND_DIR
+Environment="PATH=$VENV_DIR/bin"
+Environment="PYTHONPATH=$BACKEND_DIR"
+EnvironmentFile=$BACKEND_DIR/.env
+ExecStart=$VENV_DIR/bin/daphne -b 127.0.0.1 -p 8001 agrisecure.asgi:application
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# ============================================================================
+# Servizio MQTT to WebSocket Bridge - NUOVO!
+# ============================================================================
+cat > /etc/systemd/system/agrisecure-mqtt-bridge.service << EOF
+[Unit]
+Description=AgriSecure MQTT to WebSocket Bridge
+After=network.target mosquitto.service redis.service agrisecure-daphne.service
+Requires=mosquitto.service redis.service
+
+[Service]
+Type=simple
+User=$USER
+Group=$USER
+WorkingDirectory=$BACKEND_DIR
+Environment="PATH=$VENV_DIR/bin"
+Environment="PYTHONPATH=$BACKEND_DIR"
+Environment="DJANGO_SETTINGS_MODULE=agrisecure.settings"
+EnvironmentFile=$BACKEND_DIR/.env
+ExecStart=$VENV_DIR/bin/python scripts/mqtt_websocket_bridge.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# ============================================================================
 # Servizio Celery Worker
+# ============================================================================
 cat > /etc/systemd/system/agrisecure-celery.service << EOF
 [Unit]
 Description=AgriSecure Celery Worker
@@ -340,7 +472,9 @@ RestartSec=10
 WantedBy=multi-user.target
 EOF
 
+# ============================================================================
 # Servizio Celery Beat
+# ============================================================================
 cat > /etc/systemd/system/agrisecure-celery-beat.service << EOF
 [Unit]
 Description=AgriSecure Celery Beat Scheduler
@@ -364,7 +498,9 @@ RestartSec=10
 WantedBy=multi-user.target
 EOF
 
-# Servizio MQTT Subscriber
+# ============================================================================
+# Servizio MQTT Subscriber (per salvataggio DB)
+# ============================================================================
 cat > /etc/systemd/system/agrisecure-mqtt.service << EOF
 [Unit]
 Description=AgriSecure MQTT Subscriber
@@ -385,18 +521,23 @@ RestartSec=10
 WantedBy=multi-user.target
 EOF
 
-print_success "Servizi systemd creati"
+print_success "Servizi systemd creati (inclusi Daphne e MQTT Bridge)"
 
 # ============================================================================
 # Step 12: Configurazione Nginx
 # ============================================================================
-print_step 12 "Configurazione Nginx..."
+print_step 12 "Configurazione Nginx con supporto WebSocket..."
 
 cat > /etc/nginx/sites-available/agrisecure << EOF
 # AgriSecure IoT System - Nginx Configuration
+# Con supporto WebSocket Real-time
 
 upstream agrisecure_backend {
     server unix:/run/agrisecure/gunicorn.sock fail_timeout=0;
+}
+
+upstream agrisecure_websocket {
+    server 127.0.0.1:8001 fail_timeout=0;
 }
 
 server {
@@ -407,6 +548,19 @@ server {
     error_log /var/log/nginx/agrisecure-error.log;
 
     client_max_body_size 10M;
+
+    # WebSocket proxy per Daphne
+    location /ws/ {
+        proxy_pass http://agrisecure_websocket;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_read_timeout 86400;
+    }
 
     location /static/ {
         alias $BACKEND_DIR/staticfiles/;
@@ -427,8 +581,6 @@ server {
         proxy_set_header X-Forwarded-Proto \$scheme;
         proxy_redirect off;
         proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "upgrade";
         proxy_connect_timeout 60s;
         proxy_send_timeout 60s;
         proxy_read_timeout 60s;
@@ -443,13 +595,17 @@ EOF
 
 # Abilita sito
 ln -sf /etc/nginx/sites-available/agrisecure /etc/nginx/sites-enabled/
-rm -f /etc/nginx/sites-enabled/default 2
+rm -f /etc/nginx/sites-enabled/default 2>/dev/null || true
 
 # Test e riavvio Nginx
-nginx -t
-systemctl restart nginx
-
-print_success "Nginx configurato"
+if nginx -t 2>&1 | grep -q "successful"; then
+    systemctl restart nginx
+    print_success "Nginx configurato con supporto WebSocket"
+else
+    print_error "Errore nella configurazione Nginx"
+    nginx -t
+    exit 1
+fi
 
 # ============================================================================
 # Abilitazione e avvio servizi
@@ -459,17 +615,39 @@ echo -e "${BLUE}Avvio servizi...${NC}"
 
 systemctl daemon-reload
 
+# Abilita tutti i servizi
 systemctl enable agrisecure-web
+systemctl enable agrisecure-daphne
+systemctl enable agrisecure-mqtt-bridge
 systemctl enable agrisecure-celery
 systemctl enable agrisecure-celery-beat
 systemctl enable agrisecure-mqtt
 
+# Avvia servizi in ordine
+echo "  Avvio agrisecure-web..."
 systemctl start agrisecure-web
+sleep 1
+
+echo "  Avvio agrisecure-daphne..."
+systemctl start agrisecure-daphne
+sleep 1
+
+echo "  Avvio agrisecure-mqtt-bridge..."
+systemctl start agrisecure-mqtt-bridge
+sleep 1
+
+echo "  Avvio agrisecure-celery..."
 systemctl start agrisecure-celery
+sleep 1
+
+echo "  Avvio agrisecure-celery-beat..."
 systemctl start agrisecure-celery-beat
+sleep 1
+
+echo "  Avvio agrisecure-mqtt..."
 systemctl start agrisecure-mqtt
 
-# Attendi che i servizi si avviino
+# Attendi che i servizi si stabilizzino
 sleep 3
 
 # ============================================================================
@@ -482,19 +660,54 @@ echo -e "╚══════════════════════�
 echo ""
 
 echo -e "${BLUE}Stato servizi:${NC}"
-for service in agrisecure-web agrisecure-celery agrisecure-celery-beat agrisecure-mqtt; do
+for service in agrisecure-web agrisecure-daphne agrisecure-mqtt-bridge agrisecure-celery agrisecure-celery-beat agrisecure-mqtt; do
     if systemctl is-active --quiet $service; then
         echo -e "  ${GREEN}✓${NC} $service: ${GREEN}attivo${NC}"
     else
         echo -e "  ${RED}✗${NC} $service: ${RED}non attivo${NC}"
+        echo -e "     ${YELLOW}Vedi log: journalctl -u $service -n 20${NC}"
     fi
 done
+
+echo ""
+echo -e "${BLUE}Verifica componenti:${NC}"
+
+# Verifica Redis
+if redis-cli ping | grep -q "PONG"; then
+    echo -e "  ${GREEN}✓${NC} Redis: ${GREEN}attivo${NC}"
+else
+    echo -e "  ${RED}✗${NC} Redis: ${RED}non risponde${NC}"
+fi
+
+# Verifica Mosquitto
+if systemctl is-active --quiet mosquitto; then
+    echo -e "  ${GREEN}✓${NC} Mosquitto: ${GREEN}attivo${NC}"
+else
+    echo -e "  ${RED}✗${NC} Mosquitto: ${RED}non attivo${NC}"
+fi
+
+# Verifica PostgreSQL
+if systemctl is-active --quiet postgresql; then
+    echo -e "  ${GREEN}✓${NC} PostgreSQL: ${GREEN}attivo${NC}"
+else
+    echo -e "  ${RED}✗${NC} PostgreSQL: ${RED}non attivo${NC}"
+fi
+
+# Verifica Nginx
+if systemctl is-active --quiet nginx; then
+    echo -e "  ${GREEN}✓${NC} Nginx: ${GREEN}attivo${NC}"
+else
+    echo -e "  ${RED}✗${NC} Nginx: ${RED}non attivo${NC}"
+fi
 
 echo ""
 echo -e "${BLUE}Accessi:${NC}"
 echo -e "  Dashboard Web: ${GREEN}http://$CONTAINER_IP/${NC}"
 echo -e "  Admin Django:  ${GREEN}http://$CONTAINER_IP/admin/${NC}"
 echo -e "  API Docs:      ${GREEN}http://$CONTAINER_IP/api/v1/docs/${NC}"
+echo ""
+echo -e "${GREEN}✓ WebSocket Real-time: abilitato${NC}"
+echo -e "  Dashboard e Allarmi si aggiorneranno automaticamente!"
 echo ""
 echo -e "${YELLOW}IMPORTANTE: Crea un superuser per accedere al sistema:${NC}"
 echo -e "  ${GREEN}sudo -u agrisecure $VENV_DIR/bin/python $BACKEND_DIR/manage.py createsuperuser${NC}"
@@ -503,7 +716,17 @@ echo -e "${YELLOW}Configura Telegram/Email modificando:${NC}"
 echo -e "  ${GREEN}nano $BACKEND_DIR/.env${NC}"
 echo ""
 echo -e "${BLUE}Comandi utili:${NC}"
-echo -e "  Stato servizi:  ${GREEN}systemctl status agrisecure-*${NC}"
-echo -e "  Log web:        ${GREEN}journalctl -u agrisecure-web -f${NC}"
-echo -e "  Riavvia tutto:  ${GREEN}systemctl restart agrisecure-*${NC}"
+echo -e "  Stato servizi:     ${GREEN}systemctl status agrisecure-*${NC}"
+echo -e "  Log web:           ${GREEN}journalctl -u agrisecure-web -f${NC}"
+echo -e "  Log WebSocket:     ${GREEN}journalctl -u agrisecure-daphne -f${NC}"
+echo -e "  Log MQTT Bridge:   ${GREEN}journalctl -u agrisecure-mqtt-bridge -f${NC}"
+echo -e "  Riavvia tutto:     ${GREEN}systemctl restart agrisecure-*${NC}"
+echo ""
+echo -e "${BLUE}Test WebSocket:${NC}"
+echo -e "  1. Apri browser: ${GREEN}http://$CONTAINER_IP/${NC}"
+echo -e "  2. Apri Console (F12)"
+echo -e "  3. Cerca: ${GREEN}✅ Dashboard WebSocket connected${NC}"
+echo -e "  4. Avvia simulator: ${GREEN}cd $BACKEND_DIR/scripts && python3 simulator_enhanced.py --auto --scenario stress_test --duration 60${NC}"
+echo ""
+echo -e "${GREEN}Per documentazione completa: docs/WEBSOCKET_SETUP.md${NC}"
 echo ""

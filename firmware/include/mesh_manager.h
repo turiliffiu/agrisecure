@@ -176,7 +176,7 @@ private:
     
     // Callback statiche per ESP-NOW
     static void _onDataSent(const uint8_t* mac, esp_now_send_status_t status);
-    static void _onDataRecv(const esp_now_recv_info_t* info, const uint8_t* data, int len);
+    static void _onDataRecv(const uint8_t* mac, const uint8_t* data, int len);  // API legacy: niente RSSI diretto
     
     // Istanza singleton per callback
     static MeshManager* _instance;
