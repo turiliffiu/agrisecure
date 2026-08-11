@@ -35,3 +35,7 @@ __pycache__/
 # Backup files (timestamped)
 *.bak
 *.bak_*
+
+# Simulator output files
+backend/scripts/simulator_stats.json
+backend/scripts/*.log
