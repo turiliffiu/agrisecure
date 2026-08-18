@@ -388,6 +388,7 @@ bool connectMQTT() {
 }
 
 void checkConnections() {
+
     // Verifica GPRS
     if (modem_ready && !modem.isGprsConnected()) {
         Serial.println(F("GPRS disconnesso, riconnessione..."));
