@@ -54,7 +54,7 @@
 #endif
 
 // APN Italia (modificare per il proprio operatore)
-#define GSM_APN "internet"  // TIM: "ibox.tim.it", Vodafone: "web.omnitel.it"
+#define GSM_APN "internet.it"  // Very Mobile (WindTre MVNO) - "internet" generico dava DNS rotto + network failure
 #define GSM_USER ""
 #define GSM_PASS ""
 
@@ -192,9 +192,14 @@ void setup() {
             gprs_connected = true;
             Serial.println(F("✓ GPRS connesso"));
             
+            // DNS manuali (Google Public DNS): necessario, questo operatore/APN non fornisce DNS funzionanti di default
+            SerialGSM.print("AT+CDNSCFG=\"8.8.8.8\",\"8.8.4.4\"\r\n");
+            { uint32_t t0 = millis(); while (millis() - t0 < 3000) { if (SerialGSM.available()) SerialGSM.read(); } }
+
             // Configura TLS + MQTT
             sslClient.setCACert(ca_cert_pem);
             mqtt.setServer(MQTT_BROKER, MQTT_PORT);
+            mqtt.setKeepAlive(60);  // 15s default troppo stretto: checkConnections() puo bloccare il loop per diversi secondi
             mqtt.setCallback(mqttCallback);
             mqtt.setBufferSize(512);
             
@@ -347,6 +352,16 @@ bool connectGPRS() {
 
 bool connectMQTT() {
     Serial.printf("Connessione MQTT (%s:%d)...\n", MQTT_BROKER, MQTT_PORT);
+    
+    // Apri prima il socket TCP di base tramite il modem (AT+CIPOPEN, DNS via rete cellulare)
+    // Necessario perche' SSLClientESP32 non sa risolvere hostname senza un'interfaccia di rete nativa (WiFi)
+    if (!gsmClient.connected()) {
+        Serial.println(F("Apertura socket TCP verso il broker (via modem)..."));
+        if (!gsmClient.connect(MQTT_BROKER, MQTT_PORT)) {
+            Serial.println(F("Impossibile aprire il socket TCP verso il broker"));
+            return false;
+        }
+    }
     
     String clientId = "agrisecure-" + String(NODE_ID);
     
