@@ -7,6 +7,7 @@ import sys
 import django
 import asyncio
 import paho.mqtt.client as mqtt
+from django.conf import settings
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 
@@ -26,6 +27,12 @@ class MQTTWebSocketBridge:
     def __init__(self):
         self.channel_layer = get_channel_layer()
         self.mqtt_client = mqtt.Client()
+        mqtt_config = settings.MQTT_CONFIG
+        if mqtt_config.get('USER'):
+            self.mqtt_client.username_pw_set(
+                mqtt_config['USER'],
+                mqtt_config['PASSWORD']
+            )
         self.mqtt_client.on_connect = self.on_connect
         self.mqtt_client.on_message = self.on_message
         
@@ -214,7 +221,11 @@ class MQTTWebSocketBridge:
         print("📡 Connecting to MQTT broker at localhost:1883")
         
         try:
-            self.mqtt_client.connect("localhost", 1883, 60)
+            self.mqtt_client.connect(
+                settings.MQTT_CONFIG['BROKER'],
+                settings.MQTT_CONFIG['PORT'],
+                settings.MQTT_CONFIG['KEEPALIVE']
+            )
             print("✅ MQTT bridge running")
             print("🔌 Listening for MQTT messages...")
             self.mqtt_client.loop_forever()

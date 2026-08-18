@@ -19,6 +19,8 @@ from django.utils import timezone
 from django.db import transaction
 
 import paho.mqtt.client as mqtt
+from channels.layers import get_channel_layer
+from asgiref.sync import async_to_sync
 
 from apps.nodes.models import Node, NodeStatus, NodeType, NodeHeartbeat, NodeEvent
 from apps.sensors.models import SensorReading, SensorAlert
@@ -256,6 +258,9 @@ class MQTTSubscriber:
             
             logger.warning(f"!!! ALLARME CRITICO {alarm.id} !!! {intrusion_class} su {node_id}")
             
+            # Notifica WebSocket real-time per pagina Allarmi
+            self._notify_alarm_websocket(alarm)
+            
             # Trigger notifiche
             self._send_alarm_notifications(alarm)
         
@@ -270,6 +275,9 @@ class MQTTSubscriber:
                 lights_activated=True,
             )
             logger.info(f"Warning: animale grande rilevato su {node_id}")
+            
+            # Notifica WebSocket real-time per pagina Allarmi
+            self._notify_alarm_websocket(alarm)
     
     @transaction.atomic
     def _process_status(self, topic, payload):
@@ -383,6 +391,27 @@ class MQTTSubscriber:
             logger.info(f"Notifica schedulata per allarme {alarm.id}")
         except Exception as e:
             logger.error(f"Errore invio notifica allarme: {e}")
+
+
+    def _notify_alarm_websocket(self, alarm):
+        """Invia notifica WebSocket real-time per la pagina Allarmi"""
+        try:
+            channel_layer = get_channel_layer()
+            async_to_sync(channel_layer.group_send)(
+                'alarms_updates',
+                {
+                    'type': 'alarm_new',
+                    'alarm': {
+                        'id': alarm.id,
+                        'classification': alarm.classification,
+                        'priority': alarm.priority,
+                        'node_id': alarm.node.node_id,
+                    }
+                }
+            )
+            logger.info(f"Notifica WebSocket inviata per allarme {alarm.id}")
+        except Exception as e:
+            logger.error(f"Errore notifica WebSocket allarme: {e}")
     
     def _parse_timestamp(self, ts):
         """Converte timestamp in datetime"""

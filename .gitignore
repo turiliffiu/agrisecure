@@ -26,3 +26,16 @@ logs/
 *.pem
 *.key
 secrets/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Backup files (timestamped)
+*.bak
+*.bak_*
+
+# Simulator output files
+backend/scripts/simulator_stats.json
+backend/scripts/*.log
