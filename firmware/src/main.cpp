@@ -16,15 +16,22 @@
 // Selezione automatica del firmware basata su NODE_TYPE
 // definito in platformio.ini build_flags
 
-#if defined(NODE_TYPE) && NODE_TYPE == NODE_GATEWAY
+// NOTA (fix agosto 2026): il preprocessore C non conosce gli enum C++ (NodeType
+// in agrisecure_config.h). In un #if, un identificatore non definito come macro
+// vale sempre 0 - quindi confrontare NODE_TYPE == NODE_GATEWAY qui valutava
+// sempre "0 == 0" (vero), indipendentemente dal nodo compilato: il branch
+// GATEWAY vinceva sempre. Fix: confronto sui valori numerici dell'enum,
+// passati come macro da platformio.ini (NODE_TYPE=0/1/2/99).
+// Mappatura: 0=NODE_GATEWAY, 1=NODE_AMBIENT, 2=NODE_SECURITY, 99=NODE_TEST
+#if defined(NODE_TYPE) && NODE_TYPE == 0
     // Gateway 4G/LTE
     #include "main_gateway.cpp"
     
-#elif defined(NODE_TYPE) && NODE_TYPE == NODE_AMBIENT
+#elif defined(NODE_TYPE) && NODE_TYPE == 1
     // Nodo ambientale
     #include "main_ambient.cpp"
     
-#elif defined(NODE_TYPE) && NODE_TYPE == NODE_SECURITY
+#elif defined(NODE_TYPE) && NODE_TYPE == 2
     // Nodo sicurezza
     #include "main_security.cpp"
     
