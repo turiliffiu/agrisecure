@@ -15,14 +15,18 @@
 
 #include "agrisecure_config.h"
 #include <Wire.h>
-#include <Adafruit_BME280.h>
+#include <Adafruit_BMP280.h>
 #include <BH1750.h>
 
 // ============================================================
 // Configurazione Sensori
 // ============================================================
 
-// BME280
+// BMP280 (fix agosto 2026: modulo fisico verificato via chip-ID a 0xD0 =
+// 0x58, NON 0x60 -> e' un BMP280, non un BME280 vero nonostante l'etichetta
+// "GY-BMEP" sul retro. Manca il sensore di umidita'; temperature/pressione
+// funzionanti normalmente. SensorDataAmbient.humidity resta a 0.0 per
+// questo nodo - vedi read() piu' sotto)
 #ifndef BME280_ADDR
 #define BME280_ADDR 0x76  // Alcuni moduli usano 0x77
 #endif
@@ -113,7 +117,11 @@ public:
     const char* getLastError() { return _last_error; }
 
 private:
-    Adafruit_BME280 _bme;
+    // NB: tipo BMP280 (fix agosto 2026), ma nome variabile/metodi invariati
+    // (_bme280_ok, isBME280Available()) per minimizzare la modifica - vedi
+    // nota in testa al file. Debito tecnico noto, non influisce sul
+    // funzionamento.
+    Adafruit_BMP280 _bme;
     BH1750 _lightMeter;
     
     bool _bme280_ok;

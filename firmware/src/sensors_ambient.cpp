@@ -39,20 +39,23 @@ bool SensorsAmbient::begin(int sda, int scl, int soil_pin) {
     
     // Inizializza BME280
     DEBUG_PRINT(F("Inizializzazione BME280... "));
-    if (_bme.begin(BME280_ADDR, &Wire)) {
+    // NB (fix agosto 2026): Adafruit_BMP280::begin() non accetta &Wire come
+    // secondo argomento (a differenza di BME280) - il bus si imposta nel
+    // costruttore, che usa gia' &Wire globale di default. setSampling() ha
+    // 4 parametri utili (niente slot umidita', sensore assente su BMP280).
+    if (_bme.begin(BME280_ADDR)) {
         _bme280_ok = true;
         DEBUG_PRINTLN(F("OK"));
         
         // Configurazione per weather monitoring
-        _bme.setSampling(Adafruit_BME280::MODE_FORCED,
-                         Adafruit_BME280::SAMPLING_X1,  // Temperatura
-                         Adafruit_BME280::SAMPLING_X1,  // Pressione
-                         Adafruit_BME280::SAMPLING_X1,  // Umidità
-                         Adafruit_BME280::FILTER_OFF);
+        _bme.setSampling(Adafruit_BMP280::MODE_FORCED,
+                         Adafruit_BMP280::SAMPLING_X1,  // Temperatura
+                         Adafruit_BMP280::SAMPLING_X1,  // Pressione
+                         Adafruit_BMP280::FILTER_OFF);
     } else {
         DEBUG_PRINTLN(F("FALLITO!"));
         // Prova indirizzo alternativo
-        if (_bme.begin(0x77, &Wire)) {
+        if (_bme.begin(0x77)) {
             _bme280_ok = true;
             DEBUG_PRINTLN(F("BME280 trovato su 0x77"));
         } else {
@@ -94,7 +97,7 @@ bool SensorsAmbient::read(SensorDataAmbient* data) {
     if (_bme280_ok) {
         _bme.takeForcedMeasurement();  // Necessario in MODE_FORCED
         data->temperature = _bme.readTemperature();
-        data->humidity = _bme.readHumidity();
+        data->humidity = 0.0f;  // BMP280 non ha sensore di umidita' (fix agosto 2026)
         data->pressure = _bme.readPressure() / 100.0F;  // Pa -> hPa
         
         DEBUG_PRINTF("BME280: T=%.1f°C, H=%.1f%%, P=%.1fhPa\n",
@@ -125,9 +128,9 @@ float SensorsAmbient::readTemperature() {
 }
 
 float SensorsAmbient::readHumidity() {
-    if (!_bme280_ok) return NAN;
-    _bme.takeForcedMeasurement();
-    return _bme.readHumidity();
+    // BMP280 non ha sensore di umidita' (fix agosto 2026) - metodo
+    // readHumidity() non esiste nella classe Adafruit_BMP280.
+    return NAN;
 }
 
 float SensorsAmbient::readPressure() {
