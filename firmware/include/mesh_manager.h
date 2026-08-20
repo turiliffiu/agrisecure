@@ -17,6 +17,8 @@
 #include "agrisecure_config.h"
 #include <vector>
 #include <map>
+#include <freertos/FreeRTOS.h>
+#include <freertos/queue.h>
 
 // ============================================================
 // Configurazione Mesh
@@ -44,6 +46,16 @@ typedef struct {
 // Callback per ricezione messaggi
 // ============================================================
 typedef void (*MeshMessageCallback)(const MeshMessage* msg, const uint8_t* sender_mac);
+
+// ============================================================
+// Elemento coda RX (fix agosto 2026 - vedi nota in _onDataRecv)
+// Impacchetta messaggio + mittente per il passaggio sicuro tra il task
+// WiFi (callback ESP-NOW) e il loop() principale.
+// ============================================================
+typedef struct {
+    MeshMessage msg;
+    uint8_t sender_mac[6];
+} RxQueueItem;
 
 // ============================================================
 // Classe MeshManager
@@ -152,6 +164,16 @@ private:
     
     std::vector<MeshPeer> _peers;
     MeshMessageCallback _message_callback;
+    
+    // Coda FreeRTOS per messaggi ricevuti (fix agosto 2026): la callback
+    // ESP-NOW gira nel task WiFi (confermato da doc ufficiale Espressif),
+    // NON deve fare I/O bloccante (es. mqtt.publish() -> UART verso
+    // modem). Prima chiamava _message_callback() direttamente, causando
+    // interleaving di byte sulla UART col loop() principale durante
+    // comunicazione TLS/MQTT -> "SSL fatal alert" e disconnessioni
+    // ricorrenti osservate sul gateway. Ora la callback accoda soltanto
+    // (xQueueSend, non bloccante), update() drena la coda nel loop().
+    QueueHandle_t _rx_queue;
     
     // Coda messaggi in uscita
     struct QueuedMessage {

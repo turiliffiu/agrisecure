@@ -53,6 +53,15 @@ bool MeshManager::begin(const char* node_id, NodeType node_type, uint8_t channel
     _sequence = 0;
     _message_callback = nullptr;
     
+    // Fix agosto 2026: coda RX per disaccoppiare callback ESP-NOW (task
+    // WiFi) dal loop() principale - vedi nota completa su _rx_queue in
+    // mesh_manager.h
+    _rx_queue = xQueueCreate(MESH_MSG_QUEUE_SIZE, sizeof(RxQueueItem));
+    if (_rx_queue == NULL) {
+        DEBUG_PRINTLN(F("ERRORE: creazione coda RX fallita!"));
+        return false;
+    }
+    
     // Copia node_id
     strncpy(_node_id, node_id, NODE_ID_SIZE - 1);
     _node_id[NODE_ID_SIZE - 1] = '\0';
@@ -108,6 +117,21 @@ bool MeshManager::_initESPNow() {
 // Loop Update
 // ============================================================
 void MeshManager::update() {
+    // Fix agosto 2026: drena la coda RX popolata da _onDataRecv() (task
+    // WiFi) e chiama il callback utente qui, nel contesto sicuro del
+    // loop() principale - vedi nota completa in mesh_manager.h su
+    // _rx_queue. Svuota tutta la coda disponibile in un colpo solo
+    // (non solo un messaggio per giro), cosi' non si accumula backlog
+    // se piu' nodi inviano vicini nel tempo.
+    if (_rx_queue) {
+        RxQueueItem item;
+        while (xQueueReceive(_rx_queue, &item, 0) == pdTRUE) {
+            if (_message_callback) {
+                _message_callback(&item.msg, item.sender_mac);
+            }
+        }
+    }
+    
     // Processa coda messaggi
     _processQueue();
     
@@ -403,9 +427,23 @@ void MeshManager::_onDataRecv(const uint8_t* mac, const uint8_t* data, int len) 
     if (strcmp(msg->target_id, _instance->_node_id) == 0 || 
         strcmp(msg->target_id, "*") == 0) {
         
-        // Chiama callback utente
-        if (_instance->_message_callback) {
-            _instance->_message_callback(msg, mac);
+        // Fix agosto 2026: NON chiamare _message_callback() qui.
+        // _onDataRecv() gira nel task WiFi (doc ufficiale Espressif:
+        // "the receiving callback function also runs from the Wi-Fi
+        // task"). Il callback utente (es. publishSensorData() sul
+        // gateway) fa I/O bloccante su UART verso il modem per MQTT -
+        // se accade mentre il loop() principale sta gia' comunicando
+        // con lo stesso modem per TLS/keepalive, i due flussi si
+        // accavallano sulla UART, corrompendo i record TLS in transito
+        // ("SSL fatal alert", disconnessioni ricorrenti osservate sul
+        // gateway). Fix: accoda soltanto (xQueueSend, timeout 0 - mai
+        // bloccare il task WiFi), update() nel loop() drena la coda e
+        // chiama il callback in un contesto sicuro.
+        if (_instance->_rx_queue) {
+            RxQueueItem item;
+            memcpy(&item.msg, msg, sizeof(MeshMessage));
+            memcpy(item.sender_mac, mac, 6);
+            xQueueSend(_instance->_rx_queue, &item, 0);
         }
     } else if (_instance->_node_type == NODE_GATEWAY) {
         // Gateway: routing verso destinazione
