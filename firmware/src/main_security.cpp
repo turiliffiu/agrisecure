@@ -128,6 +128,14 @@ void setup() {
     }
     
     SecuritySensors.arm();
+    // Fix (agosto 2026): last_alarm_time parte da 0, e ALARM_COOLDOWN (60s)
+    // viene confrontato con millis() dal boot, non dall'armamento. Senza
+    // questo seed, qualunque evento PIR nei primi ~60s dall'accensione
+    // veniva silenziosamente scartato come "falso cooldown" (mai un
+    // evento precedente era realmente avvenuto). Impostando last_alarm_time
+    // nel passato di un cooldown intero, il primo evento reale viene
+    // processato normalmente.
+    last_alarm_time = millis() - ALARM_COOLDOWN;
     digitalWrite(LED_STATUS, LOW);
     
     Serial.println(F("\n╔═══════════════════════════════════════════╗"));

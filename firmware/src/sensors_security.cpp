@@ -39,9 +39,13 @@ bool SensorsSecurity::begin(int pir_main_pin, int pir_backup_pin, int sda, int s
     
     // Configura pin PIR come input
     pinMode(_pir_main_pin, INPUT);
-    pinMode(_pir_backup_pin, INPUT);
+    // PIR backup non ancora cablato fisicamente (agosto 2026): INPUT_PULLDOWN
+    // invece di INPUT per evitare letture floating che sballerebbero
+    // l'algoritmo di classificazione. Da rivalutare quando il secondo
+    // PIR fisico verra' collegato.
+    pinMode(_pir_backup_pin, INPUT_PULLDOWN);
     DEBUG_PRINTF("PIR principale: GPIO%d\n", _pir_main_pin);
-    DEBUG_PRINTF("PIR backup: GPIO%d\n", _pir_backup_pin);
+    DEBUG_PRINTF("PIR backup: GPIO%d (non cablato, pulldown)\n", _pir_backup_pin);
     
     // Inizializza I2C per MPU6050
     Wire.begin(sda, scl);
