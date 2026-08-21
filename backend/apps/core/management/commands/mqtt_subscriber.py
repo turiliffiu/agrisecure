@@ -414,14 +414,16 @@ class MQTTSubscriber:
             logger.error(f"Errore notifica WebSocket allarme: {e}")
     
     def _parse_timestamp(self, ts):
-        """Converte timestamp in datetime"""
-        if ts is None:
-            return timezone.now()
-        if isinstance(ts, (int, float)):
-            # Unix timestamp (secondi o millisecondi)
-            if ts > 1e12:  # Millisecondi
-                ts = ts / 1000
-            return datetime.fromtimestamp(ts, tz=dt_timezone.utc)
+        """Converte timestamp in datetime.
+
+        NOTA (agosto 2026): il firmware attuale (GW-001/AMB-001) non ha
+        RTC/GPS funzionante e invia nel campo 'timestamp' l'uptime del
+        dispositivo in secondi dal boot, non un epoch Unix reale (es. 18,
+        851, 1411...). Usare questo valore come epoch produceva letture
+        salvate nel 1970, invisibili in qualsiasi vista "ultime N ore".
+        Finché il firmware non invierà un timestamp reale (RTC/NTP sync),
+        si usa sempre l'orario di ricezione del messaggio.
+        """
         return timezone.now()
     
     def _to_decimal(self, value):
