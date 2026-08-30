@@ -212,7 +212,7 @@ void setup() {
     Serial.println(F("║   AgriSecure IoT - Gateway 4G             ║"));
     Serial.println(F("╚═══════════════════════════════════════════╝"));
     Serial.printf("Versione: %s\n", FIRMWARE_VERSION);
-    Serial.printf("Node ID: %s\n", NODE_ID);
+    Serial.printf("Node ID: %s\n", cfgNodeId.c_str());
     
     // LED di stato
     pinMode(LED_STATUS, OUTPUT);
@@ -398,7 +398,7 @@ void handleConfigRoot() {
     html += "<style>body{font-family:sans-serif;max-width:480px;margin:20px auto;padding:0 15px;}";
     html += "h1{color:#2c5f2d;} .row{padding:8px 0;border-bottom:1px solid #eee;}";
     html += ".ok{color:#2c5f2d;font-weight:bold;} .ko{color:#c0392b;font-weight:bold;}</style></head><body>";
-    html += "<h1>AgriSecure - " + String(NODE_ID) + "</h1>";
+    html += "<h1>AgriSecure - " + cfgNodeId + "</h1>";
     html += "<div class='row'>Firmware: " + String(FIRMWARE_VERSION) + "</div>";
     html += "<div class='row'>Modem: <span class='" + String(modem_ready ? "ok'>OK" : "ko'>OFFLINE") + "</span></div>";
     html += "<div class='row'>GPRS: <span class='" + String(gprs_connected ? "ok'>Connesso" : "ko'>Disconnesso") + "</span></div>";
@@ -427,6 +427,16 @@ void handleConfigGet() {
     html += "<label>MQTT Utente</label><input name='mqtt_user' value='" + cfgMQTTUser + "'>";
     html += "<label>MQTT Password</label><input name='mqtt_pass' type='password' value=''>";
     html += "<small>Lascia vuoto per non modificare la password attuale</small>";
+    html += "<hr><label>Node ID</label><input name='node_id' value='" + cfgNodeId + "'>";
+    html += "<small>Es. GW-001, GW-002... determina anche i topic MQTT</small>";
+    html += "<label>AP SSID</label><input name='ap_ssid' value='" + cfgAPSSID + "'>";
+    html += "<label>AP Password</label><input name='ap_pass' type='password' value=''>";
+    html += "<small>Lascia vuoto per non modificare</small>";
+    html += "<label>APN Utente</label><input name='gsm_user' value='" + cfgGSMUser + "'>";
+    html += "<label>APN Password</label><input name='gsm_pass' type='password' value=''>";
+    html += "<small>Lascia vuoto per non modificare (vuoto di norma per Very Mobile)</small>";
+    html += "<label>Intervallo publish stato (secondi)</label><input name='status_interval' type='number' value='" + String(cfgStatusInterval / 1000) + "'>";
+    html += "<label>Intervallo heartbeat mesh (secondi)</label><input name='heartbeat_interval' type='number' value='" + String(cfgHeartbeatInterval / 1000) + "'>";
     html += "<br><button type='submit'>Salva e riavvia</button>";
     html += "</form><p><a href='/'>Torna allo stato</a></p></body></html>";
     configServer.send(200, "text/html", html);
@@ -440,6 +450,21 @@ void handleConfigPost() {
     if (configServer.hasArg("mqtt_user")) prefs.putString("mqtt_user", configServer.arg("mqtt_user"));
     if (configServer.hasArg("mqtt_pass") && configServer.arg("mqtt_pass").length() > 0) {
         prefs.putString("mqtt_pass", configServer.arg("mqtt_pass"));
+    }
+    if (configServer.hasArg("node_id")) prefs.putString("node_id", configServer.arg("node_id"));
+    if (configServer.hasArg("ap_ssid")) prefs.putString("ap_ssid", configServer.arg("ap_ssid"));
+    if (configServer.hasArg("ap_pass") && configServer.arg("ap_pass").length() > 0) {
+        prefs.putString("ap_pass", configServer.arg("ap_pass"));
+    }
+    if (configServer.hasArg("gsm_user")) prefs.putString("gsm_user", configServer.arg("gsm_user"));
+    if (configServer.hasArg("gsm_pass") && configServer.arg("gsm_pass").length() > 0) {
+        prefs.putString("gsm_pass", configServer.arg("gsm_pass"));
+    }
+    if (configServer.hasArg("status_interval")) {
+        prefs.putULong("status_intv", (uint32_t)configServer.arg("status_interval").toInt() * 1000);
+    }
+    if (configServer.hasArg("heartbeat_interval")) {
+        prefs.putULong("hb_intv", (uint32_t)configServer.arg("heartbeat_interval").toInt() * 1000);
     }
     prefs.end();
 
@@ -822,7 +847,7 @@ void publishStatus() {
     if (!mqtt_connected) return;
     
     json_doc.clear();
-    json_doc["node_id"] = NODE_ID;
+    json_doc["node_id"] = cfgNodeId;
     json_doc["type"] = "GATEWAY";
     json_doc["uptime"] = millis() / 1000;
     json_doc["heap_free"] = ESP.getFreeHeap();
