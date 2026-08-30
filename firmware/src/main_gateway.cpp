@@ -163,6 +163,8 @@ void publishSecurityAlarm(const char* node_id, IntrusionClass classification,
 void publishStatus();
 void processCommand(const char* command, const char* target);
 void checkConnections();
+void handleButton();
+void updateStatusRGB();
 
 // ============================================================
 // Setup
@@ -174,6 +176,7 @@ void setup() {
 
     statusRGB.begin();
     statusRGB.show();  // spento di default
+    pinMode(BUTTON_AP, INPUT_PULLUP);
     
     Serial.println(F("\n"));
     Serial.println(F("╔═══════════════════════════════════════════╗"));
@@ -187,14 +190,17 @@ void setup() {
     digitalWrite(LED_STATUS, HIGH);
     
     // Inizializza modem 4G
+    updateStatusRGB();  // rosso: modem non ancora pronto
     Serial.println(F("\nInizializzazione modem 4G..."));
     if (initModem()) {
         modem_ready = true;
+        updateStatusRGB();  // giallo lampeggiante: modem ok, GPRS in corso
         Serial.println(F("✓ Modem pronto"));
         
         // Connetti GPRS
         if (connectGPRS()) {
             gprs_connected = true;
+            updateStatusRGB();  // giallo fisso: GPRS ok, MQTT in corso
             Serial.println(F("✓ GPRS connesso"));
             
             // DNS manuali (Google Public DNS): necessario, questo operatore/APN non fornisce DNS funzionanti di default
@@ -211,6 +217,7 @@ void setup() {
             // Connetti MQTT
             if (connectMQTT()) {
                 mqtt_connected = true;
+                updateStatusRGB();  // verde: tutto operativo
                 Serial.println(F("✓ MQTT connesso"));
             }
         }
@@ -274,23 +281,77 @@ void loop() {
         last_heartbeat = now;
     }
     
-    // LED indica stato
-    static uint32_t last_blink = 0;
-    if (now - last_blink > 1000) {
-        if (mqtt_connected) {
-            // LED acceso fisso se tutto OK
-            digitalWrite(LED_STATUS, HIGH);
-        } else if (gprs_connected) {
-            // Lampeggio lento se GPRS OK ma MQTT no
-            digitalWrite(LED_STATUS, !digitalRead(LED_STATUS));
-        } else {
-            // Lampeggio veloce se disconnesso
-            digitalWrite(LED_STATUS, (now / 200) % 2);
-        }
-        last_blink = now;
-    }
+    // Gestione pulsante AP (toggle a pressione singola, con debounce)
+    handleButton();
+    
+    // LED RGB indica stato (sostituisce il vecchio LED_STATUS singolo colore)
+    updateStatusRGB();
     
     delay(10);
+}
+
+// ============================================================
+// Pulsante AP - toggle a pressione singola, con debounce
+// ============================================================
+bool apModeActive = false;
+
+void handleButton() {
+    static bool lastReading = HIGH;
+    static bool buttonState = HIGH;
+    static uint32_t lastDebounceTime = 0;
+    const uint32_t debounceDelay = 50;
+
+    bool reading = digitalRead(BUTTON_AP);
+
+    if (reading != lastReading) {
+        lastDebounceTime = millis();
+    }
+
+    if ((millis() - lastDebounceTime) > debounceDelay) {
+        if (reading != buttonState) {
+            buttonState = reading;
+            // Pulsante collegato a GND: pressione = LOW
+            if (buttonState == LOW) {
+                apModeActive = !apModeActive;
+                Serial.printf("[BUTTON] AP mode: %s\n", apModeActive ? "ON" : "OFF");
+                // NOTA: per ora solo lo stato logico/RGB. L'attivazione WiFi AP reale
+                // (Fase 2) non e' ancora implementata.
+            }
+        }
+    }
+
+    lastReading = reading;
+}
+
+// ============================================================
+// LED RGB - sinottico di stato
+// ============================================================
+void updateStatusRGB() {
+    static uint32_t lastToggle = 0;
+    static bool blinkPhase = false;
+    uint32_t now = millis();
+
+    if (now - lastToggle > 200) {
+        blinkPhase = !blinkPhase;
+        lastToggle = now;
+    }
+
+    uint32_t color;
+
+    if (apModeActive) {
+        color = statusRGB.Color(0, 0, 255);           // Blu fisso: AP configurazione attiva
+    } else if (!modem_ready) {
+        color = statusRGB.Color(255, 0, 0);            // Rosso fisso: modem non disponibile
+    } else if (!gprs_connected) {
+        color = blinkPhase ? statusRGB.Color(255, 200, 0) : statusRGB.Color(0, 0, 0);  // Giallo lampeggiante veloce
+    } else if (!mqtt_connected) {
+        color = statusRGB.Color(255, 200, 0);           // Giallo fisso: GPRS ok, MQTT in connessione
+    } else {
+        color = statusRGB.Color(0, 255, 0);             // Verde fisso: tutto operativo
+    }
+
+    statusRGB.setPixelColor(0, color);
+    statusRGB.show();
 }
 
 // ============================================================
