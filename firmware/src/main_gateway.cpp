@@ -141,6 +141,19 @@ String cfgMQTTBroker;
 uint16_t cfgMQTTPort;
 String cfgMQTTUser;
 String cfgMQTTPass;
+String cfgNodeId;
+String cfgAPSSID;
+String cfgAPPassword;
+String cfgGSMUser;
+String cfgGSMPass;
+uint32_t cfgStatusInterval;
+uint32_t cfgHeartbeatInterval;
+String topicRoot;
+String topicStatus;
+String topicCommand;
+String topicConfig;
+String topicSensors;
+String topicSecurity;
 PubSubClient mqtt(sslClient);
 
 // ============================================================
@@ -243,7 +256,7 @@ void setup() {
     
     // Inizializza mesh
     Serial.println(F("\nInizializzazione mesh ESP-NOW..."));
-    if (!Mesh.begin(NODE_ID, NODE_GATEWAY)) {
+    if (!Mesh.begin(cfgNodeId.c_str(), NODE_GATEWAY)) {
         Serial.println(F("ERRORE: Mesh non inizializzato!"));
     } else {
         Serial.println(F("✓ Mesh pronto"));
@@ -285,13 +298,13 @@ void loop() {
     }
     
     // Pubblica status ogni 5 minuti
-    if (mqtt_connected && (now - last_status_publish > 300000)) {
+    if (mqtt_connected && (now - last_status_publish > cfgStatusInterval)) {
         publishStatus();
         last_status_publish = now;
     }
     
     // Heartbeat mesh
-    if (now - last_heartbeat >= MESH_HEARTBEAT_INTERVAL) {
+    if (now - last_heartbeat >= cfgHeartbeatInterval) {
         Serial.println(F("Invio heartbeat mesh..."));
         Mesh.sendHeartbeat();
         last_heartbeat = now;
@@ -357,7 +370,24 @@ void loadConfig() {
     cfgMQTTPort = prefs.getUShort("mqtt_port", MQTT_PORT);
     cfgMQTTUser = prefs.getString("mqtt_user", MQTT_USER);
     cfgMQTTPass = prefs.getString("mqtt_pass", MQTT_PASS);
+    cfgNodeId = prefs.getString("node_id", NODE_ID);
+    cfgAPSSID = prefs.getString("ap_ssid", AP_SSID);
+    cfgAPPassword = prefs.getString("ap_pass", AP_PASSWORD);
+    cfgGSMUser = prefs.getString("gsm_user", GSM_USER);
+    cfgGSMPass = prefs.getString("gsm_pass", GSM_PASS);
+    cfgStatusInterval = prefs.getULong("status_intv", 300000);
+    cfgHeartbeatInterval = prefs.getULong("hb_intv", MESH_HEARTBEAT_INTERVAL);
     prefs.end();
+
+    // Topic MQTT derivati dal Node ID (minuscolo), per supportare piu' gateway senza ricompilare
+    String rootLower = cfgNodeId;
+    rootLower.toLowerCase();
+    topicRoot = "agrisecure/" + rootLower;
+    topicStatus = topicRoot + "/status";
+    topicCommand = topicRoot + "/command";
+    topicConfig = topicRoot + "/config";
+    topicSensors = topicRoot + "/sensors";
+    topicSecurity = topicRoot + "/security";
     Serial.println(F("[CONFIG] Parametri caricati da NVS (o default se prima esecuzione)"));
 }
 
@@ -425,8 +455,10 @@ void handleConfigPost() {
 
 void enableAPMode() {
     WiFi.mode(WIFI_MODE_APSTA);
-    WiFi.softAP(AP_SSID, AP_PASSWORD, MESH_CHANNEL);
-    Serial.print(F("[AP] Attivo - SSID: " AP_SSID " - IP: "));
+    WiFi.softAP(cfgAPSSID.c_str(), cfgAPPassword.c_str(), MESH_CHANNEL);
+    Serial.print(F("[AP] Attivo - SSID: "));
+    Serial.print(cfgAPSSID);
+    Serial.print(F(" - IP: "));
     Serial.println(WiFi.softAPIP());
     configServer.on("/", handleConfigRoot);
     configServer.on("/config", HTTP_GET, handleConfigGet);
@@ -524,7 +556,7 @@ bool initModem() {
 bool connectGPRS() {
     Serial.printf("Connessione GPRS (APN: %s)...\n", cfgAPN.c_str());
     
-    if (!modem.gprsConnect(cfgAPN.c_str(), GSM_USER, GSM_PASS)) {
+    if (!modem.gprsConnect(cfgAPN.c_str(), cfgGSMUser.c_str(), cfgGSMPass.c_str())) {
         Serial.println(F("Connessione GPRS fallita"));
         return false;
     }
@@ -546,10 +578,10 @@ bool connectMQTT() {
         }
     }
     
-    String clientId = "agrisecure-" + String(NODE_ID);
+    String clientId = "agrisecure-" + cfgNodeId;
     
     // Last Will Testament
-    String lwt_topic = String(MQTT_TOPIC_STATUS) + "/online";
+    String lwt_topic = topicStatus + "/online";
     
     if (mqtt.connect(clientId.c_str(), cfgMQTTUser.c_str(), cfgMQTTPass.c_str(), 
                      lwt_topic.c_str(), 1, true, "false")) {
@@ -559,8 +591,8 @@ bool connectMQTT() {
         mqtt.publish(lwt_topic.c_str(), "true", true);
         
         // Subscribe a topic comandi
-        mqtt.subscribe(MQTT_TOPIC_COMMAND);
-        mqtt.subscribe(MQTT_TOPIC_CONFIG);
+        mqtt.subscribe(topicCommand.c_str());
+        mqtt.subscribe(topicConfig.c_str());
         
         Serial.println(F("Sottoscritto a topic comandi"));
         return true;
@@ -643,7 +675,7 @@ void onMeshMessage(const MeshMessage* msg, const uint8_t* sender_mac) {
                 
                 serializeJson(json_doc, json_buffer);
                 
-                String topic = String(MQTT_TOPIC_STATUS) + "/" + msg->sender_id;
+                String topic = topicStatus + "/" + msg->sender_id;
                 mqtt.publish(topic.c_str(), json_buffer);
             }
             break;
@@ -752,7 +784,7 @@ void publishSensorData(const char* node_id, const SensorDataAmbient* data) {
     
     serializeJson(json_doc, json_buffer);
     
-    String topic = String(MQTT_TOPIC_SENSORS) + "/" + node_id;
+    String topic = topicSensors + "/" + node_id;
     if (mqtt.publish(topic.c_str(), json_buffer)) {
         Serial.printf("[MQTT] Pubblicato su %s\n", topic.c_str());
     }
@@ -780,7 +812,7 @@ void publishSecurityAlarm(const char* node_id, IntrusionClass classification,
     
     serializeJson(json_doc, json_buffer);
     
-    String topic = String(MQTT_TOPIC_SECURITY) + "/" + node_id;
+    String topic = topicSecurity + "/" + node_id;
     if (mqtt.publish(topic.c_str(), json_buffer, true)) {  // Retained
         Serial.printf("[MQTT] ALLARME pubblicato su %s\n", topic.c_str());
     }
@@ -803,7 +835,7 @@ void publishStatus() {
     
     serializeJson(json_doc, json_buffer);
     
-    if (mqtt.publish(MQTT_TOPIC_STATUS, json_buffer)) {
+    if (mqtt.publish(topicStatus.c_str(), json_buffer)) {
         Serial.println(F("[MQTT] Status pubblicato"));
     }
 }
