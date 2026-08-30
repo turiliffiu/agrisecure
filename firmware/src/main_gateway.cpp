@@ -27,6 +27,7 @@
 #include <TinyGsmClient.h>
 #include <SSLClientESP32.h>
 #include <Adafruit_NeoPixel.h>
+#include <WebServer.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 
@@ -132,6 +133,7 @@ TinyGsm modem(SerialGSM);
 TinyGsmClient gsmClient(modem);
 SSLClientESP32 sslClient(&gsmClient);
 Adafruit_NeoPixel statusRGB(1, 48, NEO_GRB + NEO_KHZ800);  // LED RGB WS2812, GPIO48 (verificato fisicamente)
+WebServer configServer(80);
 PubSubClient mqtt(sslClient);
 
 // ============================================================
@@ -167,6 +169,7 @@ void handleButton();
 void updateStatusRGB();
 void enableAPMode();
 void disableAPMode();
+extern bool apModeActive;
 
 // ============================================================
 // Setup
@@ -286,6 +289,11 @@ void loop() {
     // Gestione pulsante AP (toggle a pressione singola, con debounce)
     handleButton();
     
+    // Web server di configurazione, solo se AP attivo
+    if (apModeActive) {
+        configServer.handleClient();
+    }
+    
     // LED RGB indica stato (sostituisce il vecchio LED_STATUS singolo colore)
     updateStatusRGB();
     
@@ -331,14 +339,36 @@ void handleButton() {
 // ============================================================
 // LED RGB - sinottico di stato
 // ============================================================
+void handleConfigRoot() {
+    String html = "<!DOCTYPE html><html><head><meta charset='utf-8'>";
+    html += "<meta name='viewport' content='width=device-width, initial-scale=1'>";
+    html += "<title>AgriSecure GW-001</title>";
+    html += "<style>body{font-family:sans-serif;max-width:480px;margin:20px auto;padding:0 15px;}";
+    html += "h1{color:#2c5f2d;} .row{padding:8px 0;border-bottom:1px solid #eee;}";
+    html += ".ok{color:#2c5f2d;font-weight:bold;} .ko{color:#c0392b;font-weight:bold;}</style></head><body>";
+    html += "<h1>AgriSecure - " + String(NODE_ID) + "</h1>";
+    html += "<div class='row'>Firmware: " + String(FIRMWARE_VERSION) + "</div>";
+    html += "<div class='row'>Modem: <span class='" + String(modem_ready ? "ok'>OK" : "ko'>OFFLINE") + "</span></div>";
+    html += "<div class='row'>GPRS: <span class='" + String(gprs_connected ? "ok'>Connesso" : "ko'>Disconnesso") + "</span></div>";
+    html += "<div class='row'>MQTT: <span class='" + String(mqtt_connected ? "ok'>Connesso" : "ko'>Disconnesso") + "</span></div>";
+    html += "<div class='row'>IP AP: " + WiFi.softAPIP().toString() + "</div>";
+    html += "<div class='row'>Uptime: " + String(millis() / 1000) + " s</div>";
+    html += "</body></html>";
+    configServer.send(200, "text/html", html);
+}
+
 void enableAPMode() {
     WiFi.mode(WIFI_MODE_APSTA);
     WiFi.softAP(AP_SSID, AP_PASSWORD, MESH_CHANNEL);
     Serial.print(F("[AP] Attivo - SSID: " AP_SSID " - IP: "));
     Serial.println(WiFi.softAPIP());
+    configServer.on("/", handleConfigRoot);
+    configServer.begin();
+    Serial.println(F("[AP] Web server avviato su porta 80"));
 }
 
 void disableAPMode() {
+    configServer.stop();
     WiFi.softAPdisconnect(true);
     WiFi.mode(WIFI_STA);
     esp_wifi_set_channel(MESH_CHANNEL, WIFI_SECOND_CHAN_NONE);
