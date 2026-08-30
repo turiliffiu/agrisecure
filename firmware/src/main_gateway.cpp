@@ -28,6 +28,7 @@
 #include <SSLClientESP32.h>
 #include <Adafruit_NeoPixel.h>
 #include <WebServer.h>
+#include <Preferences.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 
@@ -134,6 +135,12 @@ TinyGsmClient gsmClient(modem);
 SSLClientESP32 sslClient(&gsmClient);
 Adafruit_NeoPixel statusRGB(1, 48, NEO_GRB + NEO_KHZ800);  // LED RGB WS2812, GPIO48 (verificato fisicamente)
 WebServer configServer(80);
+Preferences prefs;
+String cfgAPN;
+String cfgMQTTBroker;
+uint16_t cfgMQTTPort;
+String cfgMQTTUser;
+String cfgMQTTPass;
 PubSubClient mqtt(sslClient);
 
 // ============================================================
@@ -170,6 +177,9 @@ void updateStatusRGB();
 void enableAPMode();
 void disableAPMode();
 extern bool apModeActive;
+void loadConfig();
+void handleConfigGet();
+void handleConfigPost();
 
 // ============================================================
 // Setup
@@ -181,6 +191,7 @@ void setup() {
 
     statusRGB.begin();
     statusRGB.show();  // spento di default
+    loadConfig();
     pinMode(BUTTON_AP, INPUT_PULLUP);
     
     Serial.println(F("\n"));
@@ -214,7 +225,7 @@ void setup() {
 
             // Configura TLS + MQTT
             sslClient.setCACert(ca_cert_pem);
-            mqtt.setServer(MQTT_BROKER, MQTT_PORT);
+            mqtt.setServer(cfgMQTTBroker.c_str(), cfgMQTTPort);
             mqtt.setKeepAlive(60);  // 15s default troppo stretto: checkConnections() puo bloccare il loop per diversi secondi
             mqtt.setCallback(mqttCallback);
             mqtt.setBufferSize(512);
@@ -339,6 +350,17 @@ void handleButton() {
 // ============================================================
 // LED RGB - sinottico di stato
 // ============================================================
+void loadConfig() {
+    prefs.begin("agrisecure", false);  // read-write: crea il namespace al primo avvio, evita errore NOT_FOUND
+    cfgAPN = prefs.getString("apn", GSM_APN);
+    cfgMQTTBroker = prefs.getString("mqtt_broker", MQTT_BROKER);
+    cfgMQTTPort = prefs.getUShort("mqtt_port", MQTT_PORT);
+    cfgMQTTUser = prefs.getString("mqtt_user", MQTT_USER);
+    cfgMQTTPass = prefs.getString("mqtt_pass", MQTT_PASS);
+    prefs.end();
+    Serial.println(F("[CONFIG] Parametri caricati da NVS (o default se prima esecuzione)"));
+}
+
 void handleConfigRoot() {
     String html = "<!DOCTYPE html><html><head><meta charset='utf-8'>";
     html += "<meta name='viewport' content='width=device-width, initial-scale=1'>";
@@ -353,8 +375,52 @@ void handleConfigRoot() {
     html += "<div class='row'>MQTT: <span class='" + String(mqtt_connected ? "ok'>Connesso" : "ko'>Disconnesso") + "</span></div>";
     html += "<div class='row'>IP AP: " + WiFi.softAPIP().toString() + "</div>";
     html += "<div class='row'>Uptime: " + String(millis() / 1000) + " s</div>";
+    html += "<p><a href='/config'>Modifica configurazione</a></p>";
     html += "</body></html>";
     configServer.send(200, "text/html", html);
+}
+
+void handleConfigGet() {
+    String html = "<!DOCTYPE html><html><head><meta charset='utf-8'>";
+    html += "<meta name='viewport' content='width=device-width, initial-scale=1'>";
+    html += "<title>Configurazione GW-001</title>";
+    html += "<style>body{font-family:sans-serif;max-width:480px;margin:20px auto;padding:0 15px;}";
+    html += "h1{color:#2c5f2d;} label{display:block;margin-top:12px;font-weight:bold;}";
+    html += "input{width:100%;padding:8px;box-sizing:border-box;margin-top:4px;}";
+    html += "button{margin-top:20px;padding:10px 20px;background:#2c5f2d;color:#fff;border:none;border-radius:4px;}";
+    html += "small{color:#888;}</style></head><body>";
+    html += "<h1>Configurazione</h1>";
+    html += "<form method='POST' action='/config'>";
+    html += "<label>APN</label><input name='apn' value='" + cfgAPN + "'>";
+    html += "<label>MQTT Broker</label><input name='mqtt_broker' value='" + cfgMQTTBroker + "'>";
+    html += "<label>MQTT Porta</label><input name='mqtt_port' type='number' value='" + String(cfgMQTTPort) + "'>";
+    html += "<label>MQTT Utente</label><input name='mqtt_user' value='" + cfgMQTTUser + "'>";
+    html += "<label>MQTT Password</label><input name='mqtt_pass' type='password' value=''>";
+    html += "<small>Lascia vuoto per non modificare la password attuale</small>";
+    html += "<br><button type='submit'>Salva e riavvia</button>";
+    html += "</form><p><a href='/'>Torna allo stato</a></p></body></html>";
+    configServer.send(200, "text/html", html);
+}
+
+void handleConfigPost() {
+    prefs.begin("agrisecure", false);
+    if (configServer.hasArg("apn")) prefs.putString("apn", configServer.arg("apn"));
+    if (configServer.hasArg("mqtt_broker")) prefs.putString("mqtt_broker", configServer.arg("mqtt_broker"));
+    if (configServer.hasArg("mqtt_port")) prefs.putUShort("mqtt_port", configServer.arg("mqtt_port").toInt());
+    if (configServer.hasArg("mqtt_user")) prefs.putString("mqtt_user", configServer.arg("mqtt_user"));
+    if (configServer.hasArg("mqtt_pass") && configServer.arg("mqtt_pass").length() > 0) {
+        prefs.putString("mqtt_pass", configServer.arg("mqtt_pass"));
+    }
+    prefs.end();
+
+    String html = "<!DOCTYPE html><html><head><meta charset='utf-8'>";
+    html += "<meta name='viewport' content='width=device-width, initial-scale=1'></head><body>";
+    html += "<h1>Configurazione salvata</h1><p>Il gateway si sta riavviando...</p></body></html>";
+    configServer.send(200, "text/html", html);
+
+    Serial.println(F("[CONFIG] Nuovi parametri salvati su NVS, riavvio..."));
+    delay(1000);
+    ESP.restart();
 }
 
 void enableAPMode() {
@@ -363,6 +429,8 @@ void enableAPMode() {
     Serial.print(F("[AP] Attivo - SSID: " AP_SSID " - IP: "));
     Serial.println(WiFi.softAPIP());
     configServer.on("/", handleConfigRoot);
+    configServer.on("/config", HTTP_GET, handleConfigGet);
+    configServer.on("/config", HTTP_POST, handleConfigPost);
     configServer.begin();
     Serial.println(F("[AP] Web server avviato su porta 80"));
 }
@@ -454,9 +522,9 @@ bool initModem() {
 }
 
 bool connectGPRS() {
-    Serial.printf("Connessione GPRS (APN: %s)...\n", GSM_APN);
+    Serial.printf("Connessione GPRS (APN: %s)...\n", cfgAPN.c_str());
     
-    if (!modem.gprsConnect(GSM_APN, GSM_USER, GSM_PASS)) {
+    if (!modem.gprsConnect(cfgAPN.c_str(), GSM_USER, GSM_PASS)) {
         Serial.println(F("Connessione GPRS fallita"));
         return false;
     }
@@ -466,13 +534,13 @@ bool connectGPRS() {
 }
 
 bool connectMQTT() {
-    Serial.printf("Connessione MQTT (%s:%d)...\n", MQTT_BROKER, MQTT_PORT);
+    Serial.printf("Connessione MQTT (%s:%d)...\n", cfgMQTTBroker.c_str(), cfgMQTTPort);
     
     // Apri prima il socket TCP di base tramite il modem (AT+CIPOPEN, DNS via rete cellulare)
     // Necessario perche' SSLClientESP32 non sa risolvere hostname senza un'interfaccia di rete nativa (WiFi)
     if (!gsmClient.connected()) {
         Serial.println(F("Apertura socket TCP verso il broker (via modem)..."));
-        if (!gsmClient.connect(MQTT_BROKER, MQTT_PORT)) {
+        if (!gsmClient.connect(cfgMQTTBroker.c_str(), cfgMQTTPort)) {
             Serial.println(F("Impossibile aprire il socket TCP verso il broker"));
             return false;
         }
@@ -483,7 +551,7 @@ bool connectMQTT() {
     // Last Will Testament
     String lwt_topic = String(MQTT_TOPIC_STATUS) + "/online";
     
-    if (mqtt.connect(clientId.c_str(), MQTT_USER, MQTT_PASS, 
+    if (mqtt.connect(clientId.c_str(), cfgMQTTUser.c_str(), cfgMQTTPass.c_str(), 
                      lwt_topic.c_str(), 1, true, "false")) {
         Serial.println(F("MQTT connesso!"));
         
