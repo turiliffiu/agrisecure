@@ -165,6 +165,8 @@ void processCommand(const char* command, const char* target);
 void checkConnections();
 void handleButton();
 void updateStatusRGB();
+void enableAPMode();
+void disableAPMode();
 
 // ============================================================
 // Setup
@@ -314,8 +316,11 @@ void handleButton() {
             if (buttonState == LOW) {
                 apModeActive = !apModeActive;
                 Serial.printf("[BUTTON] AP mode: %s\n", apModeActive ? "ON" : "OFF");
-                // NOTA: per ora solo lo stato logico/RGB. L'attivazione WiFi AP reale
-                // (Fase 2) non e' ancora implementata.
+                if (apModeActive) {
+                    enableAPMode();
+                } else {
+                    disableAPMode();
+                }
             }
         }
     }
@@ -326,6 +331,20 @@ void handleButton() {
 // ============================================================
 // LED RGB - sinottico di stato
 // ============================================================
+void enableAPMode() {
+    WiFi.mode(WIFI_MODE_APSTA);
+    WiFi.softAP(AP_SSID, AP_PASSWORD, MESH_CHANNEL);
+    Serial.print(F("[AP] Attivo - SSID: " AP_SSID " - IP: "));
+    Serial.println(WiFi.softAPIP());
+}
+
+void disableAPMode() {
+    WiFi.softAPdisconnect(true);
+    WiFi.mode(WIFI_STA);
+    esp_wifi_set_channel(MESH_CHANNEL, WIFI_SECOND_CHAN_NONE);
+    Serial.println(F("[AP] Disattivato, tornato a WIFI_STA"));
+}
+
 void updateStatusRGB() {
     static uint32_t lastToggle = 0;
     static bool blinkPhase = false;
