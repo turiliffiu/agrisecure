@@ -26,6 +26,7 @@
 #define TINY_GSM_MODEM_SIM7600  // Compatibile anche con A7670
 #include <TinyGsmClient.h>
 #include <SSLClientESP32.h>
+#include <Adafruit_NeoPixel.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 
@@ -130,6 +131,7 @@ HardwareSerial SerialGSM(1);  // UART1 per modem
 TinyGsm modem(SerialGSM);
 TinyGsmClient gsmClient(modem);
 SSLClientESP32 sslClient(&gsmClient);
+Adafruit_NeoPixel statusRGB(1, 48, NEO_GRB + NEO_KHZ800);  // LED RGB WS2812, GPIO48 (verificato fisicamente)
 PubSubClient mqtt(sslClient);
 
 // ============================================================
@@ -169,6 +171,9 @@ void setup() {
     // Inizializza Serial
     Serial.begin(115200);
     delay(100);
+
+    statusRGB.begin();
+    statusRGB.show();  // spento di default
     
     Serial.println(F("\n"));
     Serial.println(F("╔═══════════════════════════════════════════╗"));
