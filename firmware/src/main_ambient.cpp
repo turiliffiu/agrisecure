@@ -17,9 +17,15 @@
  */
 
 #include <Arduino.h>
+#include <Adafruit_NeoPixel.h>
 #include "agrisecure_config.h"
 #include "mesh_manager.h"
 #include "sensors_ambient.h"
+
+// LED RGB WS2812 (settembre 2026: stesso pattern del gateway, GPIO48 su
+// hardware S3-N16R8 - sostituisce il vecchio LED singolo-colore GPIO2 del
+// precedente hardware ESP32-WROOM-32D)
+Adafruit_NeoPixel statusRGB(1, LED_RGB_PIN, NEO_GRB + NEO_KHZ800);
 
 // ============================================================
 // Configurazione
@@ -76,14 +82,19 @@ void setup() {
     // Motivo wakeup
     printWakeupReason();
     
-    // LED di stato
-    pinMode(LED_STATUS, OUTPUT);
-    digitalWrite(LED_STATUS, HIGH);  // LED acceso durante setup
+    // LED RGB di stato (settembre 2026: NeoPixel, non piu' digitalWrite)
+    statusRGB.begin();
+    statusRGB.setBrightness(50);
+    statusRGB.setPixelColor(0, statusRGB.Color(0, 0, 255));  // blu: setup in corso
+    statusRGB.show();
     
     // Inizializza sensori ambientali
     Serial.println(F("\nInizializzazione sensori..."));
-    if (!AmbientSensors.begin()) {
+    bool sensors_ok = AmbientSensors.begin();
+    if (!sensors_ok) {
         Serial.println(F("ATTENZIONE: Alcuni sensori non disponibili!"));
+        statusRGB.setPixelColor(0, statusRGB.Color(255, 0, 0));  // rosso: problema sensori
+        statusRGB.show();
     }
     
     // Inizializza mesh
@@ -99,8 +110,12 @@ void setup() {
     // Prima lettura sensori
     readAndSendSensors();
     
-    // LED spento
-    digitalWrite(LED_STATUS, LOW);
+    // LED verde: invio completato, poi spegne prima del deep sleep
+    statusRGB.setPixelColor(0, statusRGB.Color(0, 255, 0));
+    statusRGB.show();
+    delay(300);
+    statusRGB.setPixelColor(0, 0);
+    statusRGB.show();
     
     Serial.println(F("\nSetup completato!"));
     Serial.println(F("───────────────────────────────────────────"));
@@ -146,10 +161,18 @@ void loop() {
         }
     }
     
-    // LED lampeggia se non connesso
+    // LED lampeggia giallo se non connesso (settembre 2026: NeoPixel non
+    // supporta digitalRead - stato di toggle tenuto in una variabile)
     static uint32_t last_blink = 0;
+    static bool blink_state = false;
     if (!mesh_connected && now - last_blink > 1000) {
-        digitalWrite(LED_STATUS, !digitalRead(LED_STATUS));
+        blink_state = !blink_state;
+        if (blink_state) {
+            statusRGB.setPixelColor(0, statusRGB.Color(255, 255, 0));
+        } else {
+            statusRGB.setPixelColor(0, 0);
+        }
+        statusRGB.show();
         last_blink = now;
     }
     
@@ -163,7 +186,8 @@ void loop() {
 void readAndSendSensors() {
     Serial.println(F("\n>>> Lettura sensori <<<"));
     
-    digitalWrite(LED_STATUS, HIGH);
+    statusRGB.setPixelColor(0, statusRGB.Color(0, 100, 255));  // ciano: lettura in corso
+    statusRGB.show();
     
     SensorDataAmbient data;
     if (AmbientSensors.read(&data)) {
@@ -186,7 +210,8 @@ void readAndSendSensors() {
         Serial.println(F("Errore lettura sensori!"));
     }
     
-    digitalWrite(LED_STATUS, LOW);
+    statusRGB.setPixelColor(0, 0);
+    statusRGB.show();
 }
 
 // ============================================================
