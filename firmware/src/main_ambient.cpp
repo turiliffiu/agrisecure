@@ -37,6 +37,9 @@ Preferences prefs;
 String cfgNodeId;
 String cfgAPSSID;
 String cfgAPPassword;
+uint32_t cfgDeepSleepSec;    // settembre 2026: deep sleep configurabile via web
+uint16_t cfgSoilDry;         // settembre 2026: soglie calibrazione suolo via web
+uint16_t cfgSoilWet;
 WebServer configServer(80);
 bool apModeActive = false;
 
@@ -113,6 +116,13 @@ void loadConfig() {
     cfgNodeId = prefs.getString("node_id", NODE_ID);
     cfgAPSSID = prefs.getString("ap_ssid", AP_SSID);
     cfgAPPassword = prefs.getString("ap_pass", AP_PASSWORD);
+    // settembre 2026: deep sleep e soglie suolo ora configurabili via web.
+    // Default = valori gia' in uso (macro DEEP_SLEEP_DURATION, #define
+    // SOIL_DRY_VALUE/WET_VALUE in sensors_ambient.h) - comportamento
+    // invariato finche' non si salva un valore diverso dal form.
+    cfgDeepSleepSec = prefs.getULong("deep_sleep", DEEP_SLEEP_DURATION);
+    cfgSoilDry = prefs.getUShort("soil_dry", SOIL_DRY_VALUE);
+    cfgSoilWet = prefs.getUShort("soil_wet", SOIL_WET_VALUE);
     prefs.end();
     Serial.println(F("[CONFIG] Parametri caricati da NVS (o default se prima esecuzione)"));
 }
@@ -161,6 +171,12 @@ void handleConfigGet() {
     html += "<label>AP SSID</label><input name='ap_ssid' value='" + cfgAPSSID + "'>";
     html += "<label>AP Password</label><input name='ap_pass' type='password' value=''>";
     html += "<small>Lascia vuoto per non modificare</small>";
+    html += "<hr><label>Intervallo deep sleep (minuti)</label><input name='deep_sleep_min' type='number' value='" + String(cfgDeepSleepSec / 60) + "'>";
+    html += "<small>Ogni quanto il nodo si sveglia per leggere i sensori</small>";
+    html += "<label>Soglia suolo secco (ADC)</label><input name='soil_dry' type='number' value='" + String(cfgSoilDry) + "'>";
+    html += "<small>Valore letto a sensore completamente asciutto</small>";
+    html += "<label>Soglia suolo bagnato (ADC)</label><input name='soil_wet' type='number' value='" + String(cfgSoilWet) + "'>";
+    html += "<small>Valore letto a sensore immerso in acqua</small>";
     html += "<br><button type='submit'>Salva e riavvia</button>";
     html += "</form><p><a href='/'>Torna allo stato</a></p></body></html>";
     configServer.send(200, "text/html", html);
@@ -172,6 +188,15 @@ void handleConfigPost() {
     if (configServer.hasArg("ap_ssid")) prefs.putString("ap_ssid", configServer.arg("ap_ssid"));
     if (configServer.hasArg("ap_pass") && configServer.arg("ap_pass").length() > 0) {
         prefs.putString("ap_pass", configServer.arg("ap_pass"));
+    }
+    if (configServer.hasArg("deep_sleep_min")) {
+        prefs.putULong("deep_sleep", (uint32_t)configServer.arg("deep_sleep_min").toInt() * 60);
+    }
+    if (configServer.hasArg("soil_dry")) {
+        prefs.putUShort("soil_dry", (uint16_t)configServer.arg("soil_dry").toInt());
+    }
+    if (configServer.hasArg("soil_wet")) {
+        prefs.putUShort("soil_wet", (uint16_t)configServer.arg("soil_wet").toInt());
     }
     prefs.end();
 
@@ -314,6 +339,11 @@ void setup() {
     // Inizializza sensori ambientali
     Serial.println(F("\nInizializzazione sensori..."));
     bool sensors_ok = AmbientSensors.begin();
+    // settembre 2026: applica le soglie di calibrazione suolo caricate da
+    // NVS - DEVE avvenire dopo begin(), che le inizializza ai default
+    // hardcoded (SOIL_DRY_VALUE/WET_VALUE), altrimenti la chiamata a
+    // calibrateSoil() verrebbe sovrascritta.
+    AmbientSensors.calibrateSoil(cfgSoilDry, cfgSoilWet);
     if (!sensors_ok) {
         Serial.println(F("ATTENZIONE: Alcuni sensori non disponibili!"));
         statusRGB.setPixelColor(0, statusRGB.Color(255, 0, 0));  // rosso: problema sensori
@@ -470,11 +500,14 @@ void onMeshMessage(const MeshMessage* msg, const uint8_t* sender_mac) {
 // Deep Sleep
 // ============================================================
 void enterDeepSleep() {
-    Serial.printf("Entro in deep sleep per %d secondi...\n", DEEP_SLEEP_DURATION);
+    // settembre 2026: cfgDeepSleepSec (da NVS) invece della macro fissa -
+    // vedi loadConfig() per il default (= valore della macro se mai
+    // salvato nulla di diverso).
+    Serial.printf("Entro in deep sleep per %d secondi...\n", cfgDeepSleepSec);
     Serial.flush();
     
     // Configura wakeup timer
-    esp_sleep_enable_timer_wakeup(DEEP_SLEEP_DURATION * 1000000ULL);
+    esp_sleep_enable_timer_wakeup((uint64_t)cfgDeepSleepSec * 1000000ULL);
     
     // Configura wakeup su pulsante (settembre 2026, pattern gateway):
     // pressione durante il deep sleep sveglia il nodo in modalita'
