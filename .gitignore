@@ -39,3 +39,4 @@ __pycache__/
 # Simulator output files
 backend/scripts/simulator_stats.json
 backend/scripts/*.log
+firmware/logs/
