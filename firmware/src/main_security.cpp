@@ -65,7 +65,17 @@ static void setLed(uint8_t r, uint8_t g, uint8_t b) {
 
 volatile bool alarm_triggered = false;
 uint32_t alarm_start_time = 0;
-uint32_t last_alarm_time = 0;
+// Cooldown separato per livello di gravita' (settembre 2026): un evento di
+// livello basso (warning/info) non deve mettere in ombra un allarme critico.
+// Indici: 0 = info, 1 = warning, 2 = critico.
+uint32_t last_event_time[3] = {0, 0, 0};
+
+static uint8_t alarmLevel(IntrusionClass c, const SensorDataSecurity* d) {
+    if (c == CLASS_PERSON) return 2;
+    if (c == CLASS_UNKNOWN && d->tamper_detected) return 2;
+    if (c == CLASS_ANIMAL_LARGE) return 1;
+    return 0;
+}
 uint32_t last_heartbeat = 0;
 bool system_armed = true;  // Armato di default
 bool mesh_connected = false;
@@ -152,14 +162,14 @@ void setup() {
     }
     
     SecuritySensors.arm();
-    // Fix (agosto 2026): last_alarm_time parte da 0, e ALARM_COOLDOWN (60s)
+    // Fix (agosto 2026): last_event_time[] (ex last_alarm_time) parte da 0, e ALARM_COOLDOWN (60s)
     // viene confrontato con millis() dal boot, non dall'armamento. Senza
     // questo seed, qualunque evento PIR nei primi ~60s dall'accensione
     // veniva silenziosamente scartato come "falso cooldown" (mai un
-    // evento precedente era realmente avvenuto). Impostando last_alarm_time
+    // evento precedente era realmente avvenuto). Impostando last_event_time[]
     // nel passato di un cooldown intero, il primo evento reale viene
     // processato normalmente.
-    last_alarm_time = millis() - ALARM_COOLDOWN;
+    for (int i = 0; i < 3; i++) last_event_time[i] = millis() - ALARM_COOLDOWN;
     setLed(0, 0, 0);
     
     Serial.println(F("\n╔═══════════════════════════════════════════╗"));
@@ -239,8 +249,9 @@ void IRAM_ATTR pirInterrupt() {
 void onSecurityEvent(IntrusionClass classification, const SensorDataSecurity* data) {
     uint32_t now = millis();
     
-    // Cooldown tra allarmi
-    if (now - last_alarm_time < ALARM_COOLDOWN) {
+    // Cooldown per livello di gravita' (vedi last_event_time)
+    uint8_t level = alarmLevel(classification, data);
+    if (now - last_event_time[level] < ALARM_COOLDOWN) {
         Serial.println(F("Allarme in cooldown, ignorato"));
         return;
     }
@@ -270,10 +281,13 @@ void onSecurityEvent(IntrusionClass classification, const SensorDataSecurity* da
             
         case CLASS_ANIMAL_LARGE:
             Serial.println(F("Animale grande rilevato - Warning"));
-            // Solo luce, no sirena
-            digitalWrite(RELAY_LIGHT_PIN, HIGH);
-            delay(3000);
-            digitalWrite(RELAY_LIGHT_PIN, LOW);
+            // Solo luce, no sirena. Se un allarme e' gia' attivo la luce e' gia'
+            // accesa: non toccarla, altrimenti il LOW finale la spegnerebbe.
+            if (!alarm_triggered) {
+                digitalWrite(RELAY_LIGHT_PIN, HIGH);
+                delay(3000);
+                digitalWrite(RELAY_LIGHT_PIN, LOW);
+            }
             break;
             
         case CLASS_ANIMAL_SMALL:
@@ -292,7 +306,7 @@ void onSecurityEvent(IntrusionClass classification, const SensorDataSecurity* da
             break;
     }
     
-    last_alarm_time = now;
+    last_event_time[level] = now;
 }
 
 // ============================================================

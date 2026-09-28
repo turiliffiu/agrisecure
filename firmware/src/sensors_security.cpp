@@ -227,6 +227,16 @@ IntrusionClass SensorsSecurity::_classifyIntrusion() {
         return CLASS_ANIMAL_LARGE;
     }
     
+    // Caso 3b (settembre 2026): attivo solo il PIR backup (AM312), il main no.
+    // Prima cadeva nel caso 4 (ANIMALE PICCOLO, ignorato in loco): una persona
+    // nel solo campo dell'AM312 non generava alcuna reazione. Ora e' trattato
+    // come ANIMALE GRANDE (warning: solo luce, niente sirena). Soglie
+    // provvisorie, da tarare con prove sul campo a distanza reale.
+    if (backup_count > 35 && main_count <= 20) {
+        DEBUG_PRINTLN(F("Classificazione: ANIMALE GRANDE (solo PIR backup)"));
+        return CLASS_ANIMAL_LARGE;
+    }
+
     // Caso 4: Movimento breve e sporadico
     // Animale piccolo (gatto, uccello, roditore)
     if (main_count <= 20) {
