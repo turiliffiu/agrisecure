@@ -18,6 +18,7 @@
 
 #include <Arduino.h>
 #include <Adafruit_NeoPixel.h>
+#include <esp_system.h>
 #include <Preferences.h>
 #include <WebServer.h>
 #include "agrisecure_config.h"
@@ -357,6 +358,23 @@ void setup() {
     // Inizializza Serial
     Serial.begin(115200);
     delay(100);
+
+    // Motivo dell'ultimo reset (settembre 2026): il messaggio ROM rst:0xc e'
+    // identico per ESP.restart() e per un panic, questo li distingue e rende
+    // visibile un eventuale crash all'avvio anche se il monitor si apre tardi.
+    esp_reset_reason_t rr = esp_reset_reason();
+    const char* rrName = "ALTRO";
+    switch (rr) {
+        case ESP_RST_POWERON:  rrName = "POWERON (accensione)"; break;
+        case ESP_RST_SW:       rrName = "SW (restart richiesto)"; break;
+        case ESP_RST_PANIC:    rrName = "PANIC (crash)"; break;
+        case ESP_RST_INT_WDT:  rrName = "INT_WDT"; break;
+        case ESP_RST_TASK_WDT: rrName = "TASK_WDT"; break;
+        case ESP_RST_WDT:      rrName = "WDT"; break;
+        case ESP_RST_BROWNOUT: rrName = "BROWNOUT"; break;
+        default: break;
+    }
+    Serial.printf("[BOOT] Motivo ultimo reset: %s (%d)\n", rrName, (int)rr);
     
     Serial.println(F("\n"));
     Serial.println(F("╔═══════════════════════════════════════════╗"));
