@@ -18,6 +18,8 @@
 
 #include <Arduino.h>
 #include <Adafruit_NeoPixel.h>
+#include <Preferences.h>
+#include <WebServer.h>
 #include "agrisecure_config.h"
 #include "mesh_manager.h"
 #include "sensors_security.h"
@@ -61,6 +63,218 @@ Adafruit_NeoPixel statusRGB(1, LED_RGB_PIN, NEO_GRB + NEO_KHZ800);
 static void setLed(uint8_t r, uint8_t g, uint8_t b) {
     statusRGB.setPixelColor(0, statusRGB.Color(r, g, b));
     statusRGB.show();
+}
+
+// ============================================================
+// Configurazione NVS (settembre 2026, pattern GW-001/AMB-001)
+// Identita' e parametri AP letti da NVS (namespace "agrisecure"), con default
+// dalle macro di platformio.ini: stesso firmware su tutti i nodi SEC, ID
+// impostato da web senza ricompilare. Node ID massimo NODE_ID_SIZE-1 (11)
+// caratteri: la mesh lo copia con strncpy in un buffer da 12 byte.
+// ============================================================
+#ifndef AP_SSID
+#define AP_SSID "AgriSecure-SEC"
+#endif
+#ifndef AP_PASSWORD
+#define AP_PASSWORD "ChangeMe2026"
+#endif
+
+Preferences prefs;
+String cfgNodeId;
+String cfgAPSSID;
+String cfgAPPassword;
+
+void loadConfig() {
+    prefs.begin("agrisecure", false);  // read-write: crea il namespace al primo avvio
+    cfgNodeId = prefs.getString("node_id", NODE_ID);
+    cfgAPSSID = prefs.getString("ap_ssid", AP_SSID);
+    cfgAPPassword = prefs.getString("ap_pass", AP_PASSWORD);
+    prefs.end();
+
+    if (cfgNodeId.length() >= NODE_ID_SIZE) {
+        Serial.printf("[CONFIG] ATTENZIONE: Node ID '%s' troppo lungo (max %d), troncato\n",
+                      cfgNodeId.c_str(), NODE_ID_SIZE - 1);
+        cfgNodeId = cfgNodeId.substring(0, NODE_ID_SIZE - 1);
+    }
+    Serial.println(F("[CONFIG] Parametri caricati da NVS (o default se prima esecuzione)"));
+}
+
+// ============================================================
+// AP-config on-demand (settembre 2026, pattern GW-001 adattato)
+// A differenza di AMB-001 (blocca e poi dorme) qui l'AP e il web server
+// girano DENTRO loop(): il nodo resta armato e operativo durante la
+// configurazione. Pressione lunga (BUTTON_HOLD_MS) per aprire/chiudere,
+// timeout di inattivita', link di uscita. Salvataggio = restart del nodo
+// (durante il riavvio il nodo e' scoperto per il conto alla rovescia).
+// ============================================================
+#ifndef BUTTON_HOLD_MS
+#define BUTTON_HOLD_MS 5000  // 5 secondi
+#endif
+#ifndef AP_CONFIG_TIMEOUT_MS
+#define AP_CONFIG_TIMEOUT_MS 300000  // 5 minuti senza richieste HTTP
+#endif
+
+extern bool system_armed;  // definita piu' sotto
+
+WebServer configServer(80);
+bool apModeActive = false;
+bool apCloseRequested = false;
+uint32_t apStartTime = 0;
+
+static String esc(const String& s) {
+    String o;
+    for (size_t i = 0; i < s.length(); i++) {
+        char c = s[i];
+        if (c == '&') o += "&amp;";
+        else if (c == '<') o += "&lt;";
+        else if (c == '>') o += "&gt;";
+        else if (c == '\'') o += "&#39;";
+        else o += c;
+    }
+    return o;
+}
+
+static String pageHead(const String& title) {
+    String html = "<!DOCTYPE html><html><head><meta charset='utf-8'>";
+    html += "<meta name='viewport' content='width=device-width, initial-scale=1'>";
+    html += "<title>" + title + "</title>";
+    html += "<style>body{font-family:sans-serif;max-width:480px;margin:20px auto;padding:0 15px;}";
+    html += "h1{color:#2c5f2d;} .row{padding:8px 0;border-bottom:1px solid #eee;}";
+    html += "label{display:block;margin-top:12px;font-weight:bold;}";
+    html += "input{width:100%;padding:8px;box-sizing:border-box;margin-top:4px;}";
+    html += "button{margin-top:20px;padding:10px 20px;background:#2c5f2d;color:#fff;border:none;border-radius:4px;}";
+    html += "small{color:#888;}</style></head><body>";
+    return html;
+}
+
+void handleConfigRoot() {
+    apStartTime = millis();
+    String html = pageHead("AgriSecure " + esc(cfgNodeId));
+    html += "<h1>AgriSecure - " + esc(cfgNodeId) + "</h1>";
+    html += "<div class='row'>Firmware: " + String(FIRMWARE_VERSION) + "</div>";
+    html += "<div class='row'>Tipo nodo: Sicurezza</div>";
+    html += "<div class='row'>Sistema: " + String(system_armed ? "ARMATO (resta attivo durante la configurazione)" : "DISARMATO") + "</div>";
+    html += "<div class='row'>IP AP: " + WiFi.softAPIP().toString() + "</div>";
+    html += "<div class='row'>Uptime: " + String(millis() / 1000) + " s</div>";
+    html += "<p><a href='/config'>Modifica configurazione</a></p>";
+    html += "<p><a href='/exit' style='color:#c0392b;'>Esci senza salvare</a></p>";
+    html += "</body></html>";
+    configServer.send(200, "text/html", html);
+}
+
+void handleConfigGet() {
+    apStartTime = millis();
+    String html = pageHead("Configurazione " + esc(cfgNodeId));
+    html += "<h1>Configurazione</h1>";
+    html += "<form method='POST' action='/config'>";
+    html += "<label>Node ID</label><input name='node_id' maxlength='" + String(NODE_ID_SIZE - 1) + "' value='" + esc(cfgNodeId) + "'>";
+    html += "<small>Es. SEC-001, SEC-002... massimo " + String(NODE_ID_SIZE - 1) + " caratteri</small>";
+    html += "<label>AP SSID</label><input name='ap_ssid' value='" + esc(cfgAPSSID) + "'>";
+    html += "<label>AP Password</label><input name='ap_pass' type='password' value=''>";
+    html += "<small>Lascia vuoto per non modificare (minimo 8 caratteri se la cambi)</small>";
+    html += "<br><button type='submit'>Salva e riavvia</button>";
+    html += "</form><p><a href='/'>Torna allo stato</a></p></body></html>";
+    configServer.send(200, "text/html", html);
+}
+
+void handleConfigPost() {
+    apStartTime = millis();
+    String nid = configServer.arg("node_id");
+    nid.trim();
+    String newPass = configServer.arg("ap_pass");
+    String newSsid = configServer.arg("ap_ssid");
+    newSsid.trim();
+
+    if (nid.length() == 0 || nid.length() >= NODE_ID_SIZE) {
+        configServer.send(400, "text/plain", "Node ID non valido: da 1 a 11 caratteri");
+        return;
+    }
+    if (newSsid.length() == 0) {
+        configServer.send(400, "text/plain", "AP SSID non puo' essere vuoto");
+        return;
+    }
+    if (newPass.length() > 0 && newPass.length() < 8) {
+        configServer.send(400, "text/plain", "AP Password: minimo 8 caratteri");
+        return;
+    }
+
+    prefs.begin("agrisecure", false);
+    prefs.putString("node_id", nid);
+    prefs.putString("ap_ssid", newSsid);
+    if (newPass.length() > 0) prefs.putString("ap_pass", newPass);
+    prefs.end();
+
+    String html = pageHead("Salvato");
+    html += "<h1>Configurazione salvata</h1><p>Il nodo si sta riavviando...</p></body></html>";
+    configServer.send(200, "text/html", html);
+
+    Serial.println(F("[CONFIG] Nuovi parametri salvati su NVS, riavvio..."));
+    delay(1000);
+    ESP.restart();
+}
+
+void handleConfigExit() {
+    String html = pageHead("Uscita");
+    html += "<h1>Uscita in corso</h1><p>Il nodo torna al normale funzionamento...</p></body></html>";
+    configServer.send(200, "text/html", html);
+    apCloseRequested = true;  // chiusura eseguita in loop(), dopo aver risposto
+}
+
+void enableAPMode() {
+    static bool handlersRegistered = false;
+    WiFi.mode(WIFI_MODE_APSTA);
+    WiFi.softAP(cfgAPSSID.c_str(), cfgAPPassword.c_str(), MESH_CHANNEL);
+    Serial.print(F("[AP] Attivo - SSID: "));
+    Serial.print(cfgAPSSID);
+    Serial.print(F(" - IP: "));
+    Serial.println(WiFi.softAPIP());
+    if (!handlersRegistered) {
+        configServer.on("/", handleConfigRoot);
+        configServer.on("/config", HTTP_GET, handleConfigGet);
+        configServer.on("/config", HTTP_POST, handleConfigPost);
+        configServer.on("/exit", handleConfigExit);
+        handlersRegistered = true;
+    }
+    configServer.begin();
+    apModeActive = true;
+    apStartTime = millis();
+    Serial.println(F("[AP] Web server avviato su porta 80 (il sistema resta armato)"));
+}
+
+void disableAPMode() {
+    configServer.stop();
+    WiFi.softAPdisconnect(true);
+    WiFi.mode(WIFI_STA);
+    esp_wifi_set_channel(MESH_CHANNEL, WIFI_SECOND_CHAN_NONE);
+    apModeActive = false;
+    Serial.println(F("[AP] Disattivato, tornato a WIFI_STA"));
+}
+
+// Pressione lunga non bloccante: va chiamata a ogni giro di loop()
+void handleButton() {
+    static uint32_t pressStart = 0;
+    static bool pressHandled = false;
+
+    if (digitalRead(BUTTON_AP) == HIGH) {
+        if (pressStart != 0 && !pressHandled) {
+            Serial.println(F("[BUTTON] Rilasciato troppo presto, ignorato"));
+        }
+        pressStart = 0;
+        pressHandled = false;
+        return;
+    }
+
+    if (pressStart == 0) {
+        pressStart = millis();
+        Serial.printf("[BUTTON] Pressione rilevata, tieni premuto %d s\n", BUTTON_HOLD_MS / 1000);
+        return;
+    }
+
+    if (!pressHandled && (millis() - pressStart >= BUTTON_HOLD_MS)) {
+        pressHandled = true;
+        Serial.println(F("[BUTTON] Pressione confermata"));
+        if (apModeActive) disableAPMode(); else enableAPMode();
+    }
 }
 
 volatile bool alarm_triggered = false;
@@ -111,7 +325,9 @@ void setup() {
     Serial.println(F("║   AgriSecure IoT - Nodo Sicurezza         ║"));
     Serial.println(F("╚═══════════════════════════════════════════╝"));
     Serial.printf("Versione: %s\n", FIRMWARE_VERSION);
-    Serial.printf("Node ID: %s\n", NODE_ID);
+    loadConfig();
+    Serial.printf("Node ID: %s\n", cfgNodeId.c_str());
+    pinMode(BUTTON_AP, INPUT_PULLUP);  // pulsante a GND, pressione = LOW
     
     // Configura pin attuatori
     pinMode(RELAY_SIREN_PIN, OUTPUT);
@@ -137,7 +353,7 @@ void setup() {
     
     // Inizializza mesh
     Serial.println(F("\nInizializzazione mesh..."));
-    if (!Mesh.begin(NODE_ID, NODE_SECURITY)) {
+    if (!Mesh.begin(cfgNodeId.c_str(), NODE_SECURITY)) {
         Serial.println(F("ERRORE: Mesh non inizializzato!"));
     }
     
@@ -181,6 +397,20 @@ void setup() {
 // Loop Principale
 // ============================================================
 void loop() {
+    // Pulsante AP-config (pressione lunga) e web server: non bloccanti
+    handleButton();
+    if (apModeActive) {
+        configServer.handleClient();
+        if (apCloseRequested) {
+            apCloseRequested = false;
+            delay(500);  // lascia finire l'invio della pagina di uscita
+            disableAPMode();
+        } else if (millis() - apStartTime > AP_CONFIG_TIMEOUT_MS) {
+            Serial.println(F("[AP] Timeout di inattivita', chiusura"));
+            disableAPMode();
+        }
+    }
+
     // Aggiorna mesh
     Mesh.update();
     
@@ -217,7 +447,14 @@ void loop() {
     static uint32_t last_blink = 0;
     static bool led_on = false;
     uint32_t blink_interval = alarm_triggered ? 100 : (system_armed ? 2000 : 500);
-    if (now - last_blink > blink_interval) {
+    if (apModeActive) {
+        // blu fisso mentre l'AP di configurazione e' aperto
+        static uint32_t last_ap_led = 0;
+        if (now - last_ap_led > 500) {
+            setLed(0, 0, 255);
+            last_ap_led = now;
+        }
+    } else if (now - last_blink > blink_interval) {
         led_on = !led_on;
         if (!led_on) {
             setLed(0, 0, 0);
