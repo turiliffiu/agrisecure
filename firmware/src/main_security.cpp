@@ -83,6 +83,15 @@ void IRAM_ATTR pirInterrupt();
 // Setup
 // ============================================================
 void setup() {
+    // Attuatori nello stato sicuro PRIMA di qualsiasi altra cosa (settembre 2026):
+    // fino a questo punto i pin sono flottanti e un relè attivo-alto potrebbe
+    // scattare per un istante all'accensione. Il blocco piu' sotto ripete la
+    // configurazione (innocuo) e stampa i numeri di pin.
+    pinMode(RELAY_SIREN_PIN, OUTPUT);
+    pinMode(RELAY_LIGHT_PIN, OUTPUT);
+    digitalWrite(RELAY_SIREN_PIN, LOW);
+    digitalWrite(RELAY_LIGHT_PIN, LOW);
+
     // Inizializza Serial
     Serial.begin(115200);
     delay(100);
