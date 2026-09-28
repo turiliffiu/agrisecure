@@ -208,7 +208,11 @@ IntrusionClass SensorsSecurity::_classifyIntrusion() {
     
     // Caso 1: Entrambi i PIR attivi per la maggior parte del tempo
     // Alta probabilità di persona (bersaglio grande, movimento lineare)
-    if (main_count > 40 && backup_count > 30) {
+    // Soglia del main abbassata da 40 a 30 (settembre 2026): in un passaggio
+    // laterale il main copre solo parte della finestra (es. 34/50) mentre il
+    // backup e' pieno; con la soglia a 40 finiva in ANIMALE GRANDE (solo luce).
+    // Soglie provvisorie, da tarare con prove sul campo.
+    if (main_count > 30 && backup_count > 30) {
         DEBUG_PRINTLN(F("Classificazione: PERSONA (entrambi PIR, movimento costante)"));
         return CLASS_PERSON;
     }
