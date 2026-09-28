@@ -83,13 +83,26 @@ Preferences prefs;
 String cfgNodeId;
 String cfgAPSSID;
 String cfgAPPassword;
+// Parametri di allarme e mesh configurabili da web (ms in NVS, secondi nel form)
+uint32_t cfgAlarmDuration;
+uint32_t cfgAlarmCooldown;
+uint32_t cfgHeartbeatInterval;
 
 void loadConfig() {
     prefs.begin("agrisecure", false);  // read-write: crea il namespace al primo avvio
     cfgNodeId = prefs.getString("node_id", NODE_ID);
     cfgAPSSID = prefs.getString("ap_ssid", AP_SSID);
     cfgAPPassword = prefs.getString("ap_pass", AP_PASSWORD);
+    cfgAlarmDuration = prefs.getULong("alarm_dur", ALARM_DURATION);
+    cfgAlarmCooldown = prefs.getULong("alarm_cool", ALARM_COOLDOWN);
+    cfgHeartbeatInterval = prefs.getULong("hb_intv", MESH_HEARTBEAT_INTERVAL);
     prefs.end();
+
+    // Valori fuori intervallo (NVS corrotta o scritta a mano): torna al default.
+    // Evita ad esempio un heartbeat a 0 che genererebbe una raffica di invii.
+    if (cfgAlarmDuration < 5000 || cfgAlarmDuration > 600000) cfgAlarmDuration = ALARM_DURATION;
+    if (cfgAlarmCooldown < 10000 || cfgAlarmCooldown > 3600000) cfgAlarmCooldown = ALARM_COOLDOWN;
+    if (cfgHeartbeatInterval < 60000 || cfgHeartbeatInterval > 1800000) cfgHeartbeatInterval = MESH_HEARTBEAT_INTERVAL;
 
     if (cfgNodeId.length() >= NODE_ID_SIZE) {
         Serial.printf("[CONFIG] ATTENZIONE: Node ID '%s' troppo lungo (max %d), troncato\n",
@@ -172,6 +185,12 @@ void handleConfigGet() {
     html += "<label>AP SSID</label><input name='ap_ssid' value='" + esc(cfgAPSSID) + "'>";
     html += "<label>AP Password</label><input name='ap_pass' type='password' value=''>";
     html += "<small>Lascia vuoto per non modificare (minimo 8 caratteri se la cambi)</small>";
+    html += "<hr><label>Durata allarme (secondi)</label><input name='alarm_dur' type='number' min='5' max='600' value='" + String(cfgAlarmDuration / 1000) + "'>";
+    html += "<small>Da 5 a 600. Tempo di sirena e luce dopo il rilevamento di una persona</small>";
+    html += "<label>Cooldown tra eventi (secondi)</label><input name='alarm_cool' type='number' min='10' max='3600' value='" + String(cfgAlarmCooldown / 1000) + "'>";
+    html += "<small>Da 10 a 3600. Pausa minima tra due eventi dello stesso livello</small>";
+    html += "<label>Intervallo heartbeat mesh (secondi)</label><input name='hb_intv' type='number' min='60' max='1800' value='" + String(cfgHeartbeatInterval / 1000) + "'>";
+    html += "<small>Da 60 a 1800. Oltre, gli altri nodi potrebbero considerare questo nodo inattivo</small>";
     html += "<br><button type='submit'>Salva e riavvia</button>";
     html += "</form><p><a href='/'>Torna allo stato</a></p></body></html>";
     configServer.send(200, "text/html", html);
@@ -198,10 +217,29 @@ void handleConfigPost() {
         return;
     }
 
+    long durS = configServer.arg("alarm_dur").toInt();
+    long coolS = configServer.arg("alarm_cool").toInt();
+    long hbS = configServer.arg("hb_intv").toInt();
+    if (durS < 5 || durS > 600) {
+        configServer.send(400, "text/plain", "Durata allarme: da 5 a 600 secondi");
+        return;
+    }
+    if (coolS < 10 || coolS > 3600) {
+        configServer.send(400, "text/plain", "Cooldown: da 10 a 3600 secondi");
+        return;
+    }
+    if (hbS < 60 || hbS > 1800) {
+        configServer.send(400, "text/plain", "Heartbeat: da 60 a 1800 secondi");
+        return;
+    }
+
     prefs.begin("agrisecure", false);
     prefs.putString("node_id", nid);
     prefs.putString("ap_ssid", newSsid);
     if (newPass.length() > 0) prefs.putString("ap_pass", newPass);
+    prefs.putULong("alarm_dur", (uint32_t)durS * 1000);
+    prefs.putULong("alarm_cool", (uint32_t)coolS * 1000);
+    prefs.putULong("hb_intv", (uint32_t)hbS * 1000);
     prefs.end();
 
     String html = pageHead("Salvato");
@@ -385,7 +423,7 @@ void setup() {
     // evento precedente era realmente avvenuto). Impostando last_event_time[]
     // nel passato di un cooldown intero, il primo evento reale viene
     // processato normalmente.
-    for (int i = 0; i < 3; i++) last_event_time[i] = millis() - ALARM_COOLDOWN;
+    for (int i = 0; i < 3; i++) last_event_time[i] = millis() - cfgAlarmCooldown;
     setLed(0, 0, 0);
     
     Serial.println(F("\n╔═══════════════════════════════════════════╗"));
@@ -420,13 +458,13 @@ void loop() {
     uint32_t now = millis();
     
     // Gestisci timeout allarme
-    if (alarm_triggered && (now - alarm_start_time >= ALARM_DURATION)) {
+    if (alarm_triggered && (now - alarm_start_time >= cfgAlarmDuration)) {
         Serial.println(F("Timeout allarme, disattivazione..."));
         deactivateAlarm();
     }
     
     // Heartbeat periodico
-    if (now - last_heartbeat >= MESH_HEARTBEAT_INTERVAL) {
+    if (now - last_heartbeat >= cfgHeartbeatInterval) {
         Serial.println(F("Invio heartbeat..."));
         Mesh.sendHeartbeat();
         last_heartbeat = now;
@@ -488,7 +526,7 @@ void onSecurityEvent(IntrusionClass classification, const SensorDataSecurity* da
     
     // Cooldown per livello di gravita' (vedi last_event_time)
     uint8_t level = alarmLevel(classification, data);
-    if (now - last_event_time[level] < ALARM_COOLDOWN) {
+    if (now - last_event_time[level] < cfgAlarmCooldown) {
         Serial.println(F("Allarme in cooldown, ignorato"));
         return;
     }
@@ -561,7 +599,7 @@ void activateAlarm(IntrusionClass classification) {
     digitalWrite(RELAY_SIREN_PIN, HIGH);
     digitalWrite(RELAY_LIGHT_PIN, HIGH);
     
-    Serial.printf("Allarme attivo per %d secondi\n", ALARM_DURATION / 1000);
+    Serial.printf("Allarme attivo per %lu secondi\n", (unsigned long)(cfgAlarmDuration / 1000));
 }
 
 void deactivateAlarm() {
