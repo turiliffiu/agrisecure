@@ -17,6 +17,7 @@
  */
 
 #include <Arduino.h>
+#include <Adafruit_NeoPixel.h>
 #include "agrisecure_config.h"
 #include "mesh_manager.h"
 #include "sensors_security.h"
@@ -49,6 +50,19 @@
 // ============================================================
 // Variabili Globali
 // ============================================================
+// LED RGB di stato WS2812 (settembre 2026): GPIO48 su hardware S3-N16R8, stesso
+// pattern di GW-001/AMB-001. Sostituisce il vecchio LED singolo-colore
+// (digitalWrite su LED_STATUS) del prototipo su ESP32-WROOM-32.
+#ifndef LED_RGB_PIN
+#define LED_RGB_PIN 48
+#endif
+Adafruit_NeoPixel statusRGB(1, LED_RGB_PIN, NEO_GRB + NEO_KHZ800);
+
+static void setLed(uint8_t r, uint8_t g, uint8_t b) {
+    statusRGB.setPixelColor(0, statusRGB.Color(r, g, b));
+    statusRGB.show();
+}
+
 volatile bool alarm_triggered = false;
 uint32_t alarm_start_time = 0;
 uint32_t last_alarm_time = 0;
@@ -88,9 +102,10 @@ void setup() {
     Serial.printf("Sirena su GPIO%d\n", RELAY_SIREN_PIN);
     Serial.printf("Luce su GPIO%d\n", RELAY_LIGHT_PIN);
     
-    // LED di stato
-    pinMode(LED_STATUS, OUTPUT);
-    digitalWrite(LED_STATUS, HIGH);
+    // LED RGB di stato: blu durante avvio e armamento
+    statusRGB.begin();
+    statusRGB.setBrightness(50);
+    setLed(0, 0, 255);
     
     // Inizializza sensori sicurezza
     Serial.println(F("\nInizializzazione sensori sicurezza..."));
@@ -123,7 +138,7 @@ void setup() {
     Serial.println(F("\nSistema si armerà tra 10 secondi..."));
     for (int i = 10; i > 0; i--) {
         Serial.printf("%d...\n", i);
-        digitalWrite(LED_STATUS, !digitalRead(LED_STATUS));
+        setLed(0, 0, (i % 2) ? 255 : 0);  // blu lampeggiante nel conto alla rovescia
         delay(1000);
     }
     
@@ -136,7 +151,7 @@ void setup() {
     // nel passato di un cooldown intero, il primo evento reale viene
     // processato normalmente.
     last_alarm_time = millis() - ALARM_COOLDOWN;
-    digitalWrite(LED_STATUS, LOW);
+    setLed(0, 0, 0);
     
     Serial.println(F("\n╔═══════════════════════════════════════════╗"));
     Serial.println(F("║   SISTEMA ARMATO E OPERATIVO              ║"));
@@ -181,9 +196,19 @@ void loop() {
     
     // LED lampeggia lento se armato, veloce se allarme
     static uint32_t last_blink = 0;
+    static bool led_on = false;
     uint32_t blink_interval = alarm_triggered ? 100 : (system_armed ? 2000 : 500);
     if (now - last_blink > blink_interval) {
-        digitalWrite(LED_STATUS, !digitalRead(LED_STATUS));
+        led_on = !led_on;
+        if (!led_on) {
+            setLed(0, 0, 0);
+        } else if (alarm_triggered) {
+            setLed(255, 0, 0);      // rosso: allarme
+        } else if (system_armed) {
+            setLed(0, 255, 0);      // verde: armato
+        } else {
+            setLed(255, 150, 0);    // giallo: disarmato
+        }
         last_blink = now;
     }
     
